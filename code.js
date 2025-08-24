@@ -1770,31 +1770,10 @@ function getReportDates() {
   }
 }
 
-/**
- * Hàm mới để lấy dữ liệu hàng hóa cho sidebar Unified
- */
-function getHangHoaForSidebar() {
-  try {
-    const cache = CacheService.getScriptCache();
-    const CACHE_KEY = 'DANH_SACH_HANG_HOA';
 
-    const cachedData = cache.get(CACHE_KEY);
-    if (cachedData != null) {
-      console.log('✅ Loaded products from CACHE for Unified sidebar.');
-      const hangHoaList = JSON.parse(cachedData);
-      // Thêm uniqueId cho mỗi item
-      hangHoaList.forEach(item => {
-        item.uniqueId = `${item.maKho}|${item.maHang}`;
-      });
-      return hangHoaList;
-    }
 
-    console.log('⚠️ Cache miss. Reading products from Sheet "DMHH" for Unified sidebar.');
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheetDMHH = ss.getSheetByName('DMHH');
-    if (!sheetDMHH) {
-      throw new Error('Không tìm thấy sheet "DMHH"');
-    }
+
+
 
     const data = sheetDMHH.getDataRange().getValues();
     const hangHoaList = [];
