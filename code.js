@@ -2,7 +2,6 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   const menu = ui.createMenu('⚡ Kế toán Pro');
   
-  // Đã lược bỏ: menu.addItem('📦 Tạo Nhập Xuất Tồn', 'taoNhapXuatTon');
   menu.addItem('🚀 Bảng Điều Khiển Tổng Hợp', 'moSidebarUnified');
   menu.addSeparator();
   
@@ -14,11 +13,6 @@ function onOpen() {
   tinhGiaMenu.addItem('Nhập sau, Xuất trước (LIFO)', 'runLIFO');
   
   menu.addSubMenu(tinhGiaMenu);
-  menu.addSeparator();
-  
-  // Ghi chú: Chức năng hàng hóa đã được tích hợp vào Bảng Điều Khiển Tổng Hợp
-  // menu.addItem('📦 Chọn Hàng hóa', 'moSidebarHangHoa');
-  
   menu.addToUi();
 }
 
@@ -944,8 +938,7 @@ function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
 //---------------------------------------------------------------------------------------------
 
 
-// Đã lược bỏ: Function taoNhapXuatTon() cũ - không còn đọc dữ liệu từ cell
-// Chức năng này đã được thay thế hoàn toàn bằng taoNhapXuatTonFromSidebar()
+
 
 
 
@@ -1333,26 +1326,7 @@ function isChildAccount(parentAccount, childAccount) {
   return childAccount.length > parentAccount.length && childAccount.startsWith(parentAccount);
 }
 
-/**
- * HÀM PHỤ: Tìm tài khoản con sử dụng index (SỬA LẠI - TÌM TẤT CẢ CÁC CẤP CON)
- */
-function findChildAccountsOptimized(parentAccount, accountIndex) {
-  const children = [];
-  const parentPattern = parentAccount;
-  
-  // Sử dụng index để tìm kiếm nhanh
-  if (accountIndex.has(parentPattern)) {
-    const potentialChildren = accountIndex.get(parentPattern);
-    
-    potentialChildren.forEach(acc => {
-      if (acc.ma !== parentAccount && isChildAccount(parentAccount, acc.ma)) {
-        children.push(acc);
-      }
-    });
-  }
-  
-  return children;
-}
+
 
 /**
  * HÀM PHỤ: Tìm tài khoản con của một tài khoản cha (SỬA LẠI - TÌM TẤT CẢ CÁC CẤP CON)
@@ -1681,79 +1655,7 @@ function moSidebarUnified() {
 /**
  * Hàm mới để mở sidebar Sổ chi tiết (giữ lại để tương thích)
  */
-function moSidebarSoChiTiet() {
-  const html = HtmlService.createHtmlOutputFromFile('sidebarSoChiTiet')
-    .setWidth(400)
-    .setTitle('📖 Tùy chọn Sổ Chi Tiết');
-  SpreadsheetApp.getUi().showSidebar(html);
-}
 
-// ==================== SIDEBAR TÀI KHOẢN - GIẢI PHÁP 1 ====================
-
-// Hàm mở sidebar tài khoản (đã đơn giản hóa)
-function moSidebarTaiKhoan() {
-  const html = HtmlService.createHtmlOutputFromFile('sidebarTaiKhoan') // Tên file HTML của bạn
-    .setWidth(400)
-    .setTitle('💼 Chọn Tài khoản');
-  SpreadsheetApp.getUi().showSidebar(html);
-}
-
-// Lấy dữ liệu tài khoản cho sidebar (đã đơn giản hóa)
-function getTaiKhoanDataForSidebar() {
-  // Lấy ra bộ nhớ đệm của script
-  const cache = CacheService.getScriptCache();
-  const CACHE_KEY = 'DANH_SACH_TAI_KHOAN';
-
-  // 1. Thử lấy dữ liệu từ cache trước
-  const cachedData = cache.get(CACHE_KEY);
-  if (cachedData != null) {
-    console.log('✅ Loaded accounts from CACHE.');
-    // Nếu có, giải nén và trả về ngay lập tức
-    return {
-      accounts: JSON.parse(cachedData)
-    };
-  }
-
-  // 2. Nếu cache không có, đọc từ Sheet như bình thường
-  console.log('⚠️ Cache miss. Reading accounts from Sheet.');
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheetDMTK = ss.getSheetByName('DMTK');
-  
-  if (!sheetDMTK) {
-    throw new Error('Không tìm thấy sheet DMTK');
-  }
-  
-  try {
-    const data = sheetDMTK.getDataRange().getValues();
-    const accounts = [];
-    
-    // Bỏ qua dòng tiêu đề (i = 1)
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      const ma = row[0]?.toString().trim();
-      const ten = row[1]?.toString().trim();
-      const loai = row[2] || null;
-      if (ma && ten) {
-        accounts.push({ ma, ten, loai });
-      }
-    }
-    
-    accounts.sort((a, b) => a.ma.localeCompare(b.ma));
-    
-    // 3. Lưu dữ liệu vào cache cho lần sử dụng tiếp theo
-    // Dữ liệu sẽ được lưu trong 15 phút (900 giây)
-    cache.put(CACHE_KEY, JSON.stringify(accounts), 900);
-    console.log(`✅ Loaded and cached ${accounts.length} accounts.`);
-    
-    return {
-      accounts: accounts
-    };
-    
-  } catch (error) {
-    console.error('Lỗi lấy dữ liệu tài khoản:', error.toString());
-    throw new Error('Không thể lấy dữ liệu tài khoản: ' + error.toString());
-  }
-}
 
 /**
  * **SỬA LỖI**: Ghi tài khoản vào Ô ĐANG HOẠT ĐỘNG (ACTIVE CELL) mới nhất.
@@ -1849,17 +1751,7 @@ function getRecentAccounts() {
 /**
  * Hàm lưu ngày báo cáo vào Properties Service
  */
-function saveReportDates(startDate, endDate) {
-  try {
-    const properties = PropertiesService.getDocumentProperties();
-    const datesData = { startDate, endDate };
-    properties.setProperty('REPORT_DATES', JSON.stringify(datesData));
-    return true;
-  } catch (error) {
-    console.error('Lỗi lưu ngày báo cáo:', error.toString());
-    return false;
-  }
-}
+
 
 /**
  * Hàm lấy ngày báo cáo từ Properties Service
@@ -2740,100 +2632,6 @@ function createProcessingSummary(taiKhoanCanXem, childAccountsMap, processingTim
   console.log('✅ Hoàn thành xử lý!\n');
 }
 
-/**
- * HÀM PHỤ: Test logic phân cấp tài khoản (để kiểm tra không có tính trùng lặp)
- */
-function testAccountHierarchyLogic() {
-  console.log('🧪 TEST LOGIC PHÂN CẤP TÀI KHOẢN:');
-  
-  // Test case 1: Tài khoản cấp 1
-  console.log('\n📋 Test TK 111 (cấp 1):');
-  const testAccounts1 = [
-    { ma: '111', ten: 'Tiền mặt' },
-    { ma: '1111', ten: 'Tiền mặt VND' },
-    { ma: '1112', ten: 'Tiền mặt USD' },
-    { ma: '11111', ten: 'Tiền mặt VND chính' },
-    { ma: '11112', ten: 'Tiền mặt VND phụ' },
-    { ma: '11121', ten: 'Tiền mặt USD chính' },
-    { ma: '11122', ten: 'Tiền mặt USD phụ' }
-  ];
-  
-  const children111 = findDirectChildAccounts('111', testAccounts1);
-  console.log('   - Con trực tiếp của 111:', children111.map(c => c.ma).join(', '));
-  console.log('   - Kết quả mong đợi: 1111, 1112');
-  
-  // Test case 2: Tài khoản cấp 2
-  console.log('\n📋 Test TK 1111 (cấp 2):');
-  const children1111 = findDirectChildAccounts('1111', testAccounts1);
-  console.log('   - Con trực tiếp của 1111:', children1111.map(c => c.ma).join(', '));
-  console.log('   - Kết quả mong đợi: 11111, 11112');
-  
-  // Test case 3: Tài khoản cấp 3
-  console.log('\n📋 Test TK 11111 (cấp 3):');
-  const children11111 = findDirectChildAccounts('11111', testAccounts1);
-  console.log('   - Con trực tiếp của 11111:', children11111.map(c => c.ma).join(', '));
-  console.log('   - Kết quả mong đợi: (không có)');
-  
-  // Test case 4: Kiểm tra tính trùng lặp
-  console.log('\n📋 Kiểm tra tính trùng lặp:');
-  const allChildren111 = getAllDescendants('111', testAccounts1);
-  const allChildren1111 = getAllDescendants('1111', testAccounts1);
-  const allChildren11111 = getAllDescendants('11111', testAccounts1);
-  
-  console.log('   - Tất cả con cháu của 111:', allChildren111.map(c => c.ma).join(', '));
-  console.log('   - Tất cả con cháu của 1111:', allChildren1111.map(c => c.ma).join(', '));
-  console.log('   - Tất cả con cháu của 11111:', allChildren11111.map(c => c.ma).join(', '));
-  
-  // Kiểm tra xem có tài khoản nào bị tính trùng lặp không
-  const intersection = allChildren111.filter(acc => allChildren1111.includes(acc));
-  if (intersection.length > 0) {
-    console.log('   ⚠️ CẢNH BÁO: Có tài khoản bị tính trùng lặp:', intersection.map(c => c.ma).join(', '));
-  } else {
-    console.log('   ✅ Không có tài khoản bị tính trùng lặp');
-  }
-  
-  console.log('\n🎯 Test logic phân cấp hoàn thành!');
-}
 
-/**
- * HÀM PHỤ: Lấy tất cả con cháu của một tài khoản (để test)
- */
-function getAllDescendants(parentAccount, allAccounts) {
-  const descendants = [];
-  const directChildren = findDirectChildAccounts(parentAccount, allAccounts);
-  
-  descendants.push(...directChildren);
-  
-  directChildren.forEach(child => {
-    const grandChildren = getAllDescendants(child.ma, allAccounts);
-    descendants.push(...grandChildren);
-  });
-  
-  return descendants;
-}
 
-/**
- * HÀM PHỤ: Kiểm tra xem một tài khoản có phải là con TRỰC TIẾP không
- */
-function isDirectChild(parentAccount, childAccount) {
-  // Nếu tài khoản cha có 3 ký tự (cấp 1)
-  if (parentAccount.length === 3) {
-    // Con trực tiếp phải có 4 ký tự và bắt đầu bằng 3 ký tự của cha
-    return childAccount.length === 4 && childAccount.startsWith(parentAccount);
-  }
-  
-  // Nếu tài khoản cha có 4 ký tự (cấp 2)
-  if (parentAccount.length === 4) {
-    // Con trực tiếp phải có 5 ký tự và bắt đầu bằng 4 ký tự của cha
-    return childAccount.length === 5 && childAccount.startsWith(parentAccount);
-  }
-  
-  // Nếu tài khoản cha có 5 ký tự (cấp 3)
-  if (parentAccount.length === 5) {
-    // Con trực tiếp phải có 6 ký tự và bắt đầu bằng 5 ký tự của cha
-    return childAccount.length === 6 && childAccount.startsWith(parentAccount);
-  }
-  
-  // Các cấp khác: con trực tiếp phải dài hơn cha 1 ký tự
-  return childAccount.length === parentAccount.length + 1 && childAccount.startsWith(parentAccount);
-}
+
