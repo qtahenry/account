@@ -507,6 +507,7 @@
         <div class="actions">
           <button class="btn btn-primary" onclick="createCDPS()">📊 Cân Đối Phát Sinh</button>
           <button class="btn btn-secondary" onclick="createSoChiTiet()">📖 Sổ Chi Tiết</button>
+          <button class="btn btn-secondary" onclick="createSoChiTietMoi()">🆕 Sổ Chi Tiết (Mới)</button>
         </div>
       </div>
 
@@ -1139,6 +1140,56 @@
         statusElement.style.borderColor = '#dc3545';
         statusElement.style.color = '#721c24';
       }).taoSoChiTietTaiKhoan_V2(startDate, endDate, selectedAccounts);
+    }
+
+    function createSoChiTietMoi() {
+      if (selectedAccounts.length === 0) {
+        alert('Vui lòng chọn ít nhất một tài khoản');
+        return;
+      }
+      
+      const startDate = document.getElementById('startDate').value;
+      const endDate = document.getElementById('endDate').value;
+      
+      if (!startDate || !endDate) {
+        alert('Vui lòng chọn kỳ báo cáo');
+        return;
+      }
+      
+      // Lưu ngày báo cáo
+      saveReportDates(startDate, endDate);
+      
+      // Hiển thị tiến trình xử lý
+      const statusElement = document.getElementById('status');
+      statusElement.textContent = `🔄 Đang tạo báo cáo Sổ Chi Tiết Mới cho ${selectedAccounts.length} tài khoản...`;
+      statusElement.style.background = '#fff3cd';
+      statusElement.style.borderColor = '#ffc107';
+      statusElement.style.color = '#856404';
+      statusElement.style.display = 'block';
+      
+      // Chạy báo cáo sổ chi tiết mới
+      google.script.run.withSuccessHandler(() => {
+        console.log('✅ Báo cáo Sổ Chi Tiết Mới đã hoàn thành');
+        // Hiển thị thông báo thành công
+        statusElement.textContent = `✅ Đã tạo báo cáo Sổ Chi Tiết Mới cho ${selectedAccounts.length} tài khoản`;
+        statusElement.style.background = '#e6f4ea';
+        statusElement.style.borderColor = '#34a853';
+        statusElement.style.color = '#137333';
+        
+        // Reset sau 3 giây
+        setTimeout(() => {
+          statusElement.textContent = `Đã chọn: ${selectedAccounts.length} tài khoản`;
+          statusElement.style.background = 'white';
+          statusElement.style.borderColor = '#e8eaed';
+          statusElement.style.color = '#5f6368';
+        }, 3000);
+      }).withFailureHandler(error => {
+        console.error('❌ Lỗi tạo báo cáo:', error.toString());
+        statusElement.textContent = `❌ Lỗi: ${error.toString()}`;
+        statusElement.style.background = '#f8d7da';
+        statusElement.style.borderColor = '#dc3545';
+        statusElement.style.color = '#721c24';
+      }).taosochitiet(startDate, endDate, selectedAccounts);
     }
 
     function saveReportDates(startDate, endDate) {
