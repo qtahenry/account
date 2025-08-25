@@ -2515,8 +2515,8 @@ function taosochitiet(startDateStr, endDateStr, taiKhoanCanXem) {
 
     ss.toast('Đang đọc dữ liệu phát sinh...', 'Bước 2/5');
     
-    // Đọc dữ liệu phát sinh bao gồm TK_THUE
-    const allTransactionsRaw = readDataFromPrefixedSheetsWithThue(ss, 'DL_', ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'TK_THUE', 'THUE_VAT']);
+    // Đọc dữ liệu phát sinh bao gồm TK_THUE và thông tin chứng từ
+    const allTransactionsRaw = readDataFromPrefixedSheetsWithThue(ss, 'DL_', ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'TK_THUE', 'THUE_VAT', 'SO_CT', 'NGAY_CT', 'DIEN_GIAI']);
     
     ss.toast('Đang xử lý phát sinh thuế...', 'Bước 3/5');
     
@@ -2725,8 +2725,9 @@ function isValidRowDataWithThue(row, headerRow, requiredColumns) {
       
       const value = row[colIndex];
       
-      // Đối với TK_THUE và THUE_VAT, cho phép rỗng (không bắt buộc)
-      if (requiredCol === 'TK_THUE' || requiredCol === 'THUE_VAT') {
+      // Đối với TK_THUE, THUE_VAT, SO_CT, NGAY_CT, DIEN_GIAI, cho phép rỗng (không bắt buộc)
+      if (requiredCol === 'TK_THUE' || requiredCol === 'THUE_VAT' || 
+          requiredCol === 'SO_CT' || requiredCol === 'NGAY_CT' || requiredCol === 'DIEN_GIAI') {
         continue;
       }
       
