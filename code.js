@@ -2672,10 +2672,36 @@ function processSingleSheetWithThue(sheet, requiredColumns) {
     // Tìm vị trí của cột NGAY_HT
     const colIndexNgayHT = headerRow.indexOf('NGAY_HT');
 
-    // Kiểm tra xem có đủ các cột bắt buộc không
-    const missingCols = requiredColumns.filter(col => !headerRow.includes(col));
+    // Kiểm tra xem có đủ các cột bắt buộc không (với xử lý tên cột linh hoạt)
+    const missingCols = [];
+    const foundCols = [];
+    
+    requiredColumns.forEach(requiredCol => {
+      const normalizedRequiredCol = requiredCol.toUpperCase();
+      const found = headerRowUpper.some(header => {
+        const normalizedHeader = header.toUpperCase();
+        return normalizedHeader === normalizedRequiredCol ||
+               (normalizedRequiredCol === 'SO_CT' && (normalizedHeader === 'SỐ_CT' || normalizedHeader === 'SOCHUNGTU')) ||
+               (normalizedRequiredCol === 'NGAY_CT' && (normalizedHeader === 'NGÀY_CT' || normalizedHeader === 'NGAYCHUNGTU')) ||
+               (normalizedRequiredCol === 'DIEN_GIAI' && (normalizedHeader === 'DIỄN_GIẢI' || normalizedHeader === 'DIENGIAI')) ||
+               (normalizedRequiredCol === 'NGAY_HT' && (normalizedHeader === 'NGÀY_HT' || normalizedHeader === 'NGAYHACHTU')) ||
+               (normalizedRequiredCol === 'TK_NO' && (normalizedHeader === 'TKNO' || normalizedHeader === 'TAIKHOANNO')) ||
+               (normalizedRequiredCol === 'TK_CO' && (normalizedHeader === 'TKCO' || normalizedHeader === 'TAIKHOANCO')) ||
+               (normalizedRequiredCol === 'SO_TIEN' && (normalizedHeader === 'SỐ_TIỀN' || normalizedHeader === 'SOTIEN')) ||
+               (normalizedRequiredCol === 'TK_THUE' && (normalizedHeader === 'TKTHUE' || normalizedHeader === 'TAIKHOANTHUE')) ||
+               (normalizedRequiredCol === 'THUE_VAT' && (normalizedHeader === 'THUẾ_VAT' || normalizedHeader === 'THUEVAT'));
+      });
+      
+      if (found) {
+        foundCols.push(requiredCol);
+      } else {
+        missingCols.push(requiredCol);
+      }
+    });
+    
     if (missingCols.length > 0) {
       console.error(`Sheet "${sheet.getName()}" thiếu các cột bắt buộc: ${missingCols.join(', ')}`);
+      console.log(`Các cột tìm thấy: ${foundCols.join(', ')}`);
       return [];
     }
 
@@ -2701,8 +2727,40 @@ function processSingleSheetWithThue(sheet, requiredColumns) {
         row: i + 1
       };
       
+      // Map dữ liệu theo header với xử lý tên cột linh hoạt
       headerRow.forEach((header, index) => {
-        rowData[header] = row[index];
+        // Chuẩn hóa tên cột để tránh lỗi case sensitivity
+        const normalizedHeader = header.toString().trim().toUpperCase();
+        rowData[normalizedHeader] = row[index];
+        
+        // Thêm mapping cho các tên cột có thể khác nhau
+        if (normalizedHeader === 'SO_CT' || normalizedHeader === 'SỐ_CT' || normalizedHeader === 'SOCHUNGTU') {
+          rowData['SO_CT'] = row[index];
+        }
+        if (normalizedHeader === 'NGAY_CT' || normalizedHeader === 'NGÀY_CT' || normalizedHeader === 'NGAYCHUNGTU') {
+          rowData['NGAY_CT'] = row[index];
+        }
+        if (normalizedHeader === 'DIEN_GIAI' || normalizedHeader === 'DIỄN_GIẢI' || normalizedHeader === 'DIENGIAI') {
+          rowData['DIEN_GIAI'] = row[index];
+        }
+        if (normalizedHeader === 'NGAY_HT' || normalizedHeader === 'NGÀY_HT' || normalizedHeader === 'NGAYHACHTU') {
+          rowData['NGAY_HT'] = row[index];
+        }
+        if (normalizedHeader === 'TK_NO' || normalizedHeader === 'TKNO' || normalizedHeader === 'TAIKHOANNO') {
+          rowData['TK_NO'] = row[index];
+        }
+        if (normalizedHeader === 'TK_CO' || normalizedHeader === 'TKCO' || normalizedHeader === 'TAIKHOANCO') {
+          rowData['TK_CO'] = row[index];
+        }
+        if (normalizedHeader === 'SO_TIEN' || normalizedHeader === 'SỐ_TIỀN' || normalizedHeader === 'SOTIEN') {
+          rowData['SO_TIEN'] = row[index];
+        }
+        if (normalizedHeader === 'TK_THUE' || normalizedHeader === 'TKTHUE' || normalizedHeader === 'TAIKHOANTHUE') {
+          rowData['TK_THUE'] = row[index];
+        }
+        if (normalizedHeader === 'THUE_VAT' || normalizedHeader === 'THUẾ_VAT' || normalizedHeader === 'THUEVAT') {
+          rowData['THUE_VAT'] = row[index];
+        }
       });
       
       processedData.push(rowData);
@@ -2720,7 +2778,27 @@ function processSingleSheetWithThue(sheet, requiredColumns) {
 function isValidRowDataWithThue(row, headerRow, requiredColumns) {
   try {
     for (const requiredCol of requiredColumns) {
-      const colIndex = headerRow.indexOf(requiredCol);
+      // Tìm cột với xử lý tên cột linh hoạt
+      let colIndex = -1;
+      const normalizedRequiredCol = requiredCol.toUpperCase();
+      
+      for (let i = 0; i < headerRow.length; i++) {
+        const normalizedHeader = headerRow[i].toString().trim().toUpperCase();
+        if (normalizedHeader === normalizedRequiredCol ||
+            (normalizedRequiredCol === 'SO_CT' && (normalizedHeader === 'SỐ_CT' || normalizedHeader === 'SOCHUNGTU')) ||
+            (normalizedRequiredCol === 'NGAY_CT' && (normalizedHeader === 'NGÀY_CT' || normalizedHeader === 'NGAYCHUNGTU')) ||
+            (normalizedRequiredCol === 'DIEN_GIAI' && (normalizedHeader === 'DIỄN_GIẢI' || normalizedHeader === 'DIENGIAI')) ||
+            (normalizedRequiredCol === 'NGAY_HT' && (normalizedHeader === 'NGÀY_HT' || normalizedHeader === 'NGAYHACHTU')) ||
+            (normalizedRequiredCol === 'TK_NO' && (normalizedHeader === 'TKNO' || normalizedHeader === 'TAIKHOANNO')) ||
+            (normalizedRequiredCol === 'TK_CO' && (normalizedHeader === 'TKCO' || normalizedHeader === 'TAIKHOANCO')) ||
+            (normalizedRequiredCol === 'SO_TIEN' && (normalizedHeader === 'SỐ_TIỀN' || normalizedHeader === 'SOTIEN')) ||
+            (normalizedRequiredCol === 'TK_THUE' && (normalizedHeader === 'TKTHUE' || normalizedHeader === 'TAIKHOANTHUE')) ||
+            (normalizedRequiredCol === 'THUE_VAT' && (normalizedHeader === 'THUẾ_VAT' || normalizedHeader === 'THUEVAT'))) {
+          colIndex = i;
+          break;
+        }
+      }
+      
       if (colIndex === -1) continue;
       
       const value = row[colIndex];
