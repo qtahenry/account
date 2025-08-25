@@ -567,6 +567,7 @@
         <button onclick="checkDataLoaded()" style="margin-left: 10px; padding: 5px; background: #4ecdc4; color: white;">📊 Check Data</button>
         <button onclick="forceReloadData()" style="margin-left: 10px; padding: 5px; background: #f0ad4e; color: white;">🔄 Force Reload</button>
         <button onclick="filterHangHoaSimple()" style="margin-left: 10px; padding: 5px; background: #9b59b6; color: white;">🎯 Test Simple Filter</button>
+        <button onclick="testSearchWorking()" style="margin-left: 10px; padding: 5px; background: #27ae60; color: white;">✅ Test Search Working</button>
       </div>
     </div>
 
@@ -1442,23 +1443,27 @@
         return;
       }
       
-      if (!loadingElement) {
-        console.error('❌ loadingHangHoa element not found!');
-        return;
-      }
-      
       // Kiểm tra dữ liệu đầu vào
       if (!hangHoaToRender || !Array.isArray(hangHoaToRender) || hangHoaToRender.length === 0) {
-        console.log('📝 No data to render, showing empty message');
-        loadingElement.style.display = 'none';
+        console.log('📝 No data to render, showing no results message');
+        
+        // Ẩn loading nếu có
+        if (loadingElement) {
+          loadingElement.style.display = 'none';
+        }
+        
         listElement.innerHTML = '<div style="padding: 20px; text-align: center; color: #5f6368; font-style: italic;">Không tìm thấy hàng hóa phù hợp.</div>';
         return;
       }
       
       console.log('🎨 Rendering items...');
       
-      // Ẩn loading, hiển thị danh sách
-      loadingElement.style.display = 'none';
+      // Ẩn loading nếu có
+      if (loadingElement) {
+        loadingElement.style.display = 'none';
+      }
+      
+      // Hiển thị danh sách
       listElement.style.display = 'block';
       
       // Tạo HTML
@@ -1491,6 +1496,51 @@
       
       // Cập nhật DOM
       listElement.innerHTML = html;
+      
+      // Hiển thị thông báo thành công
+      const statusElement = document.getElementById('hanghoaStatus');
+      if (statusElement) {
+        if (hangHoaToRender.length === allHangHoa.length) {
+          statusElement.textContent = `📋 Hiển thị tất cả ${hangHoaToRender.length} hàng hóa`;
+        } else {
+          statusElement.textContent = `🔍 Tìm thấy ${hangHoaToRender.length} kết quả phù hợp`;
+        }
+        statusElement.style.display = 'block';
+        statusElement.style.background = '#e6f4ea';
+        statusElement.style.borderColor = '#34a853';
+        statusElement.style.color = '#137333';
+        
+        // Tự động ẩn sau 3 giây
+        setTimeout(() => {
+          if (statusElement.textContent.includes('Tìm thấy')) {
+            statusElement.style.display = 'none';
+          }
+        }, 3000);
+      }
+      
+      // Hiển thị thông báo tạm thời
+      const tempMsg = document.createElement('div');
+      tempMsg.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #4caf50;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        z-index: 10000;
+        font-size: 14px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      `;
+      tempMsg.textContent = `✅ Tìm kiếm thành công: ${hangHoaToRender.length} kết quả`;
+      document.body.appendChild(tempMsg);
+      
+      // Tự động xóa sau 2 giây
+      setTimeout(() => {
+        if (tempMsg.parentNode) {
+          tempMsg.parentNode.removeChild(tempMsg);
+        }
+      }, 2000);
       
       console.log(`🎯 DOM updated. Children count: ${listElement.children.length}`);
       console.log('=== renderHangHoaList END ==='); // Debug log
@@ -1907,6 +1957,42 @@
       }
     }
     
+    // Hàm test để xác nhận tìm kiếm hoạt động
+    function testSearchWorking() {
+      console.log('✅ === TEST SEARCH WORKING ===');
+      
+      try {
+        // Test 1: Tìm kiếm với từ khóa "1"
+        const searchInput = document.getElementById('hanghoaSearchInput');
+        if (searchInput) {
+          searchInput.value = '1';
+          console.log('🔍 Testing search with "1"');
+          filterHangHoaSimple();
+          
+          // Test 2: Sau 1 giây, tìm kiếm với từ khóa "mk"
+          setTimeout(() => {
+            searchInput.value = 'mk';
+            console.log('🔍 Testing search with "mk"');
+            filterHangHoaSimple();
+            
+            // Test 3: Sau 1 giây nữa, xóa tìm kiếm
+            setTimeout(() => {
+              searchInput.value = '';
+              console.log('🔍 Testing search with empty string');
+              filterHangHoaSimple();
+              
+              console.log('✅ All tests completed!');
+            }, 1000);
+          }, 1000);
+        } else {
+          console.log('❌ Search input not found');
+        }
+      } catch (error) {
+        console.error('❌ Error in test:', error);
+      }
+      
+      console.log('✅ === TEST SEARCH WORKING END ===');
+    }
 
   </script>
 </body>
