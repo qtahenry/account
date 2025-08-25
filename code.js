@@ -1111,8 +1111,11 @@ function taoSoChiTietTaiKhoan_V2(startDateStr, endDateStr, taiKhoanCanXem) {
       console.warn('⚠️ CẢNH BÁO:', validation.warnings.join(', '));
     }
 
-    const allTransactionsRaw = readDataFromPrefixedSheets(ss, 'DL_', ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN']);
+    const allTransactionsRaw = readDataFromPrefixedSheets(ss, 'DL_', ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'THUE_VAT', 'DIEN_GIAI', 'SO_CT', 'NGAY_CT']);
+    console.log(`📥 Đọc được ${allTransactionsRaw.length} giao dịch thô từ các sheet DL_`);
+    
     const allTransactions = xuLyGiaoDichVaThue(allTransactionsRaw);
+    console.log(`🔧 Sau khi xử lý thuế GTGT: ${allTransactions.length} giao dịch`);
     
     // Tối ưu hóa xử lý giao dịch lớn
     const optimizedTransactions = optimizeLargeTransactionProcessing(allTransactions);
@@ -1152,15 +1155,21 @@ function taoSoChiTietTaiKhoan_V2(startDateStr, endDateStr, taiKhoanCanXem) {
       const transactionsInPeriod = getTransactionsForParentAccount(tk, childAccounts, optimizedTransactions, ngayBatDau, ngayKetThuc);
 
             transactionsInPeriod.forEach(trans => {
-            const phatSinhNo = (trans.TK_NO === tk) ? trans.SO_TIEN : 0;
-            const phatSinhCo = (trans.TK_CO === tk) ? trans.SO_TIEN : 0;
+            // Tính toán phát sinh tổng hợp từ tài khoản cha và con (BAO GỒM CẢ THUẾ GTGT)
+            const [totalPhatSinhNo, totalPhatSinhCo] = calculateAggregatedPhatSinh(trans, tk, childAccounts);
+            
+            // Tài khoản đối ứng cho hiển thị
             const tkDoiUng = (trans.TK_NO === tk) ? trans.TK_CO : trans.TK_NO;
 
-            // Tính toán phát sinh tổng hợp từ tài khoản cha và con (SỬA LẠI)
-            const [totalPhatSinhNo, totalPhatSinhCo] = calculateAggregatedPhatSinh(trans, tk, childAccounts);
-
+            // Cập nhật tổng phát sinh (KHÔNG CỘNG 2 LẦN)
             tongPhatSinhNo += totalPhatSinhNo;
             tongPhatSinhCo += totalPhatSinhCo;
+            
+            // Log chi tiết cho giao dịch thuế GTGT
+            const thueVAT = parseFloat(trans.THUE_VAT) || 0;
+            if (thueVAT > 0) {
+              console.log(`💰 Giao dịch thuế GTGT: ${tk} - NỢ: ${totalPhatSinhNo}, CÓ: ${totalPhatSinhCo} - CT: ${trans.SO_CT || 'N/A'}`);
+            }
 
             let finalDienGiai = trans.DIEN_GIAI || '';
             const tenHang = trans.TEN_HANG?.toString().trim();
@@ -1552,9 +1561,26 @@ function calculateAggregatedPhatSinh(trans, parentAccount, childAccounts) {
   let phatSinhNo = 0;
   let phatSinhCo = 0;
   
-  // Phát sinh từ tài khoản cha
+  // Phát sinh từ giao dịch gốc
   if (trans.TK_NO === parentAccount) phatSinhNo += trans.SO_TIEN;
   if (trans.TK_CO === parentAccount) phatSinhCo += trans.SO_TIEN;
+  
+  // ✅ THÊM: Xử lý thuế GTGT
+  const thueVAT = parseFloat(trans.THUE_VAT) || 0;
+  if (thueVAT > 0) {
+    const dauSoNo = trans.TK_NO?.toString().charAt(0);
+    const dauSoCo = trans.TK_CO?.toString().charAt(0);
+    
+    if (['5', '7'].includes(dauSoCo)) {
+      // Thuế GTGT đầu ra: NỢ tkNo, CÓ 33311
+      if (trans.TK_NO === parentAccount) phatSinhNo += thueVAT;
+      if (parentAccount === '33311') phatSinhCo += thueVAT;
+    } else if (['1', '2', '6', '8'].includes(dauSoNo)) {
+      // Thuế GTGT đầu vào: NỢ 1331, CÓ tkCo
+      if (parentAccount === '1331') phatSinhNo += thueVAT;
+      if (trans.TK_CO === parentAccount) phatSinhCo += thueVAT;
+    }
+  }
   
   // Phát sinh từ tài khoản con (CHỈ TÍNH KHI KHÔNG PHẢI GIAO DỊCH NỘI BỘ)
   if (childAccounts.length > 0) {
@@ -1631,7 +1657,7 @@ function xuLyGiaoDichVaThue(transactionsRaw) {
           SO_TIEN: thueVAT, 
           DIEN_GIAI: `Thuế GTGT đầu ra của ${trans.DIEN_GIAI || 'chứng từ ' + trans.SO_CT}` 
         };
-        console.log(`✅ Thuế đầu ra: ${tkNo} → 33311 (${thueVAT.toLocaleString()}đ)`);
+        console.log(`✅ Thuế đầu ra: ${tkNo} → 33311 (${thueVAT.toLocaleString()}đ) - CT: ${trans.SO_CT || 'N/A'}`);
       } 
       // ƯU TIÊN 2: Kiểm tra tài khoản NỢ (chi phí, tài sản)
       else if (['1', '2', '6', '8'].includes(dauSoNo)) {
@@ -1643,11 +1669,11 @@ function xuLyGiaoDichVaThue(transactionsRaw) {
           SO_TIEN: thueVAT, 
           DIEN_GIAI: `Thuế GTGT đầu vào của ${trans.DIEN_GIAI || 'chứng từ ' + trans.SO_CT}` 
         };
-        console.log(`✅ Thuế đầu vào: 1331 → ${tkCo} (${thueVAT.toLocaleString()}đ)`);
+        console.log(`✅ Thuế đầu vào: 1331 → ${tkCo} (${thueVAT.toLocaleString()}đ) - CT: ${trans.SO_CT || 'N/A'}`);
       }
       // Trường hợp không xác định được loại thuế
       else {
-        console.log(`⚠️ Không xác định được loại thuế GTGT: NỢ ${tkNo}, CÓ ${tkCo}`);
+        console.log(`⚠️ Không xác định được loại thuế GTGT: NỢ ${tkNo}, CÓ ${tkCo} - CT: ${trans.SO_CT || 'N/A'}`);
       }
       
       if (butToanThue) {
