@@ -2459,10 +2459,9 @@ function taosochitiet(startDateStr, endDateStr, taiKhoanCanXem) {
   const ui = SpreadsheetApp.getUi();
 
   try {
-    // Kiểm tra tham số đầu vào
-    const validationErrors = validateInputData(startDateStr, endDateStr, taiKhoanCanXem);
-    if (validationErrors.length > 0) {
-      throw new Error('Lỗi validation: ' + validationErrors.join(', '));
+    // Kiểm tra tham số đầu vào cơ bản
+    if (!startDateStr || !endDateStr || !taiKhoanCanXem || taiKhoanCanXem.length === 0) {
+      throw new Error('Tham số đầu vào không hợp lệ');
     }
 
     const ngayBatDau = new Date(startDateStr);
@@ -2484,9 +2483,8 @@ function taosochitiet(startDateStr, endDateStr, taiKhoanCanXem) {
     if (!sheetDMTK) throw new Error('Không tìm thấy sheet "DMTK"');
     const dataDMTK = sheetDMTK.getDataRange().getValues();
     
-    // Xây dựng map tài khoản và cấu trúc phân cấp
+    // Xây dựng map tài khoản
     const taiKhoanMap = new Map();
-    const taiKhoanList = [];
     
     dataDMTK.slice(1).forEach(row => {
       const maTK = row[0]?.toString().trim();
@@ -2499,19 +2497,8 @@ function taosochitiet(startDateStr, endDateStr, taiKhoanCanXem) {
           duCoGoc: parseFloat(row[4]) || 0 
         };
         taiKhoanMap.set(maTK, taiKhoanInfo);
-        taiKhoanList.push(taiKhoanInfo);
       }
     });
-
-    // Xây dựng cấu trúc phân cấp tài khoản
-    let accountHierarchy = getCachedAccountHierarchy();
-    if (!accountHierarchy) {
-      accountHierarchy = buildAccountHierarchy(taiKhoanList);
-      cacheAccountHierarchy(accountHierarchy);
-    }
-    
-    // Xây dựng index tài khoản để tối ưu hiệu suất tìm kiếm
-    const accountIndex = buildAccountIndex(taiKhoanList);
 
     ss.toast('Đang đọc dữ liệu phát sinh...', 'Bước 2/5');
     
@@ -2522,9 +2509,6 @@ function taosochitiet(startDateStr, endDateStr, taiKhoanCanXem) {
     
     // Xử lý phát sinh thuế từ TK_THUE
     const allTransactions = xuLyPhatSinhThueTuTK_THUE(allTransactionsRaw);
-    
-    // Tối ưu hóa xử lý giao dịch lớn
-    const optimizedTransactions = optimizeLargeTransactionProcessing(allTransactions);
 
     ss.toast('Đang tính toán số dư và phát sinh...', 'Bước 4/5');
     const outputData = [];
@@ -2534,17 +2518,15 @@ function taosochitiet(startDateStr, endDateStr, taiKhoanCanXem) {
       if (!taiKhoanMap.has(tk)) continue;
       const tkInfo = taiKhoanMap.get(tk);
 
-      // Tìm tài khoản con của tài khoản hiện tại
-      const childAccounts = findChildAccountsOptimized(tk, accountIndex);
-      
-      // Tạo tiêu đề báo cáo với thông tin tổng hợp
-      const titleRow = createReportTitle(tk, tkInfo, childAccounts);
+      // Tạo tiêu đề báo cáo đơn giản
+      const titleRow = `SỔ CHI TIẾT TÀI KHOẢN ${tk} - ${tkInfo.ten}`;
       
       outputData.push([titleRow, '', '', '', '', '', '', '', '']);
       outputData.push(headers);
 
-      // Tính số dư đầu kỳ động
-      let [duNoDauKy, duCoDauKy] = tinhSoDuDauKyDongChoTaiKhoan(tk, childAccounts, optimizedTransactions, ngayBatDau, taiKhoanMap);
+      // Tính số dư đầu kỳ đơn giản
+      let duNoDauKy = tkInfo.duNoGoc || 0;
+      let duCoDauKy = tkInfo.duCoGoc || 0;
       
       outputData.push(['', '', '', 'Số dư đầu kỳ', '', '', '', duNoDauKy, duCoDauKy]);
 
@@ -2553,29 +2535,26 @@ function taosochitiet(startDateStr, endDateStr, taiKhoanCanXem) {
       let tongPhatSinhNo = 0;
       let tongPhatSinhCo = 0;
 
-      // Lấy giao dịch trong kỳ báo cáo (bao gồm tài khoản cha và con)
-      const transactionsInPeriod = getTransactionsForParentAccount(tk, childAccounts, optimizedTransactions, ngayBatDau, ngayKetThuc);
+      // Lọc giao dịch trong kỳ báo cáo cho tài khoản này
+      const transactionsInPeriod = allTransactions.filter(trans => {
+        const ngayHT = new Date(trans.NGAY_HT);
+        return (trans.TK_NO === tk || trans.TK_CO === tk) && 
+               ngayHT >= ngayBatDau && ngayHT <= ngayKetThuc;
+      });
 
       transactionsInPeriod.forEach(trans => {
-        const phatSinhNo = (trans.TK_NO === tk) ? trans.SO_TIEN : 0;
-        const phatSinhCo = (trans.TK_CO === tk) ? trans.SO_TIEN : 0;
+        const phatSinhNo = (trans.TK_NO === tk) ? parseFloat(trans.SO_TIEN) || 0 : 0;
+        const phatSinhCo = (trans.TK_CO === tk) ? parseFloat(trans.SO_TIEN) || 0 : 0;
         const tkDoiUng = (trans.TK_NO === tk) ? trans.TK_CO : trans.TK_NO;
 
-        // Tính toán phát sinh tổng hợp từ tài khoản cha và con
-        const [totalPhatSinhNo, totalPhatSinhCo] = calculateAggregatedPhatSinh(trans, tk, childAccounts);
-
-        tongPhatSinhNo += totalPhatSinhNo;
-        tongPhatSinhCo += totalPhatSinhCo;
+        tongPhatSinhNo += phatSinhNo;
+        tongPhatSinhCo += phatSinhCo;
 
         let finalDienGiai = trans.DIEN_GIAI || '';
-        const tenHang = trans.TEN_HANG?.toString().trim();
-        const quyCach = trans.QUY_CACH?.toString().trim();
-        if (tenHang) finalDienGiai += ` - ${tenHang}`;
-        if (quyCach) finalDienGiai += ` (${quyCach})`;
 
         // Cập nhật số dư cuối kỳ
-        let duNoMoi = duNoCuoiKy + totalPhatSinhNo;
-        let duCoMoi = duCoCuoiKy + totalPhatSinhCo;
+        let duNoMoi = duNoCuoiKy + phatSinhNo;
+        let duCoMoi = duCoCuoiKy + phatSinhCo;
         [duNoCuoiKy, duCoCuoiKy] = tinhSoDu(duNoMoi, duCoMoi);
 
         outputData.push([ 
@@ -2584,8 +2563,8 @@ function taosochitiet(startDateStr, endDateStr, taiKhoanCanXem) {
           trans.NGAY_CT ? new Date(trans.NGAY_CT) : '', 
           finalDienGiai, 
           tkDoiUng, 
-          totalPhatSinhNo, 
-          totalPhatSinhCo, 
+          phatSinhNo, 
+          phatSinhCo, 
           duNoCuoiKy, 
           duCoCuoiKy 
         ]);
@@ -2621,15 +2600,6 @@ function taosochitiet(startDateStr, endDateStr, taiKhoanCanXem) {
     }
 
     ss.toast('Hoàn thành!', 'Thành công', 5);
-    
-    // Tạo báo cáo tóm tắt quá trình xử lý
-    const totalProcessingTime = Date.now() - startTime;
-    const childAccountsMap = new Map();
-    taiKhoanCanXem.forEach(tk => {
-      const childAccounts = findChildAccountsOptimized(tk, accountIndex);
-      childAccountsMap.set(tk, childAccounts);
-    });
-    createProcessingSummary(taiKhoanCanXem, childAccountsMap, totalProcessingTime);
     
   } catch (e) {
     console.error("LỖI TẠO SỔ CHI TIẾT MỚI: " + e.toString() + e.stack);
