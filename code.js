@@ -1548,7 +1548,30 @@ function calculateFinalBalanceWithInternalHandling(parentAccount, childAccounts,
 /**
  * HÀM PHỤ: Tính toán phát sinh tổng hợp từ tài khoản cha và con (SỬA LẠI)
  */
-
+// function calculateAggregatedPhatSinh(trans, parentAccount, childAccounts) {
+//   let phatSinhNo = 0;
+//   let phatSinhCo = 0;
+  
+//   // Phát sinh từ tài khoản cha
+//   if (trans.TK_NO === parentAccount) phatSinhNo += trans.SO_TIEN;
+//   if (trans.TK_CO === parentAccount) phatSinhCo += trans.SO_TIEN;
+  
+//   // Phát sinh từ tài khoản con (CHỈ TÍNH KHI KHÔNG PHẢI GIAO DỊCH NỘI BỘ)
+//   if (childAccounts.length > 0) {
+//     const isInternalNo = isAccountInHierarchy(trans.TK_NO, parentAccount, childAccounts);
+//     const isInternalCo = isAccountInHierarchy(trans.TK_CO, parentAccount, childAccounts);
+    
+//     // Chỉ tính khi giao dịch với tài khoản bên ngoài hệ thống cha-con
+//     if (isInternalNo && !isInternalCo) {
+//       phatSinhNo += trans.SO_TIEN;
+//     }
+//     if (isInternalCo && !isInternalNo) {
+//       phatSinhCo += trans.SO_TIEN;
+//     }
+//   }
+  
+//   return [phatSinhNo, phatSinhCo];
+// }
 function calculateAggregatedPhatSinh(trans, parentAccount, childAccounts) {
   const accounts = [parentAccount, ...childAccounts.map(c => c.ma)];
   const isInternalNo = accounts.includes(trans.TK_NO);
@@ -1641,8 +1664,6 @@ function tinhSoDu(tongNo, tongCo) {
     return [0, tongCo - tongNo];
   }
 }
-
-//-------------------------------------------------------------------------------------------------------------
 /**
  * Lấy toàn bộ danh sách tài khoản từ DMTK để hiển thị trên sidebar.
  */
@@ -1881,7 +1902,62 @@ function getReportDates() {
 /**
  * Hàm mới để lấy dữ liệu hàng hóa cho sidebar Unified
  */
+// function getHangHoaForSidebar() {
+//   try {
+//     const cache = CacheService.getScriptCache();
+//     const CACHE_KEY = 'DANH_SACH_HANG_HOA';
 
+//     const cachedData = cache.get(CACHE_KEY);
+//     if (cachedData != null) {
+//       console.log('✅ Loaded products from CACHE for Unified sidebar.');
+//       const hangHoaList = JSON.parse(cachedData);
+//       // Thêm uniqueId cho mỗi item
+//       hangHoaList.forEach(item => {
+//         item.uniqueId = `${item.maKho}|${item.maHang}`;
+//       });
+//       return hangHoaList;
+//     }
+
+//     console.log('⚠️ Cache miss. Reading products from Sheet "DMHH" for Unified sidebar.');
+//     const ss = SpreadsheetApp.getActiveSpreadsheet();
+//     const sheetDMHH = ss.getSheetByName('DMHH');
+//     if (!sheetDMHH) {
+//       throw new Error('Không tìm thấy sheet "DMHH"');
+//     }
+
+//     const data = sheetDMHH.getDataRange().getValues();
+//     const hangHoaList = [];
+//     // Bắt đầu từ dòng 2 để bỏ qua tiêu đề
+//     for (let i = 1; i < data.length; i++) {
+//       const row = data[i];
+//       const maKho = row[0]?.toString().trim();
+//       const maHang = row[1]?.toString().trim();
+//       if (maKho && maHang) { // Chỉ lấy hàng hóa có đủ mã kho và mã hàng
+//         const item = {
+//           maKho: maKho,
+//           maHang: maHang,
+//           tenHang: row[2]?.toString().trim() || '',
+//           quyCach: row[3]?.toString().trim() || '',
+//           dvt: row[4]?.toString().trim() || ''
+//         };
+//         item.uniqueId = `${maKho}|${maHang}`;
+//         hangHoaList.push(item);
+//       }
+//     }
+
+//     // Sắp xếp để dễ tìm kiếm
+//     hangHoaList.sort((a, b) => a.maKho.localeCompare(b.maKho) || a.maHang.localeCompare(b.maHang));
+
+//     // Lưu vào cache trong 15 phút
+//     cache.put(CACHE_KEY, JSON.stringify(hangHoaList), 900);
+//     console.log(`✅ Loaded and cached ${hangHoaList.length} products for Unified sidebar.`);
+
+//     return hangHoaList;
+//   } catch (e) {
+//     console.error('Error in getHangHoaForSidebar: ' + e.toString());
+//     return [];
+//   }
+// }
 // Phiên bản khắc phục của hàm getHangHoaForSidebar
 function getHangHoaForSidebar() {
   try {
