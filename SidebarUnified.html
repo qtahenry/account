@@ -360,7 +360,7 @@
       font-weight: 500;
       color: #5f6368;
       cursor: pointer;
-      min-width: 140px;
+      min-width: 10px;
     }
 
     .filter-checkbox input[type="checkbox"] {
@@ -555,13 +555,14 @@
   <div id="hanghoa" class="tab-content">
 
     <div class="section">
-      <!-- <div class="section-title">🔍 Tìm Kiếm Hàng Hóa</div> -->
+
       <div class="search-box">
         <input type="text" id="hanghoaSearchInput" class="search-input" placeholder="🔍 Tìm theo mã kho, mã hàng, tên hàng..." oninput="filterHangHoa();">
-        <span class="search-icon">🔍</span>
+        <!-- <span class="search-icon">🔍</span> -->
         <span class="clear-search" id="clearHangHoaSearch" onclick="clearHangHoaSearch()" title="Xóa tìm kiếm">✕</span>
-      </div>
+      </div>     
     </div>
+
 
     <div class="section">
       <div class="section-title">📦 Danh Sách Hàng Hóa</div>
@@ -596,34 +597,6 @@
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-title">🔍 Lọc Theo Phân Loại</div>
-      <div class="filter-simple">
-        <div class="filter-row">
-          <label class="filter-checkbox">
-            <input type="checkbox" id="filterByKho" onchange="toggleKhoFilter()">
-            📦 Lọc theo mã kho
-          </label>
-          <select id="khoFilter" disabled onchange="applyKhoHangFilter()">
-            <option value="">Chọn mã kho...</option>
-          </select>
-        </div>
-        
-        <div class="filter-row">
-          <label class="filter-checkbox">
-            <input type="checkbox" id="filterByHang" onchange="toggleHangFilter()">
-            🏷️ Lọc theo mã hàng
-          </label>
-          <select id="hangFilter" disabled onchange="applyKhoHangFilter()">
-            <option value="">Chọn mã hàng...</option>
-          </select>
-        </div>
-        
-        <div class="filter-actions">
-          <button class="btn-small" onclick="resetKhoHangFilter()">🔄 Reset bộ lọc</button>
-        </div>
-      </div>
-    </div>
     <div class="status" id="hanghoaStatus" style="display:none;">Đã chọn: 0 hàng hóa</div>
   </div>
 
@@ -1227,7 +1200,7 @@
               <div class="hanghoa-code">
                 <span class="ma-kho">${item.maKho || 'N/A'}</span><span>${item.maHang || 'N/A'}</span>
               </div>
-              <div class="hanghoa-details">Quy cách: ${item.quyCach || 'N/A'} | ĐVT: ${item.dvt || 'N/A'}</div>
+              <div class="hanghoa-details">Quy cách: ${item.quyCach || '...'} | ĐVT: ${item.dvt || 'N/A'}</div>
             </div>
           </label>
         `;
