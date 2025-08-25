@@ -1603,33 +1603,60 @@ function getTransactionsForParentAccount(parentAccount, childAccounts, allTransa
  */
 function xuLyGiaoDichVaThue(transactionsRaw) {
   const finalTransactions = [];
+  
   for (const trans of transactionsRaw) {
     const soTien = parseFloat(trans.SO_TIEN) || 0;
     const thueVAT = parseFloat(trans.THUE_VAT) || 0;
     const tkNo = trans.TK_NO?.toString().trim();
     const tkCo = trans.TK_CO?.toString().trim();
     
+    // Thêm giao dịch gốc nếu có số tiền và đủ tài khoản
     if (soTien > 0 && tkNo && tkCo) {
       finalTransactions.push({ ...trans, SO_TIEN: soTien });
     }
 
-    if (thueVAT > 0) {
+    // Xử lý thuế GTGT nếu có
+    if (thueVAT > 0 && tkNo && tkCo) {
       const dauSoNo = tkNo.charAt(0);
       const dauSoCo = tkCo.charAt(0);
       let butToanThue = null;
 
-      if (['1', '2', '6', '8'].includes(dauSoNo)) {
-        butToanThue = { ...trans, TK_NO: '1331', TK_CO: tkCo, SO_TIEN: thueVAT, DIEN_GIAI: `Thuế GTGT của ${trans.DIEN_GIAI || 'chứng từ ' + trans.SO_CT}` };
+      // ƯU TIÊN 1: Kiểm tra tài khoản CÓ (doanh thu, thu nhập) trước
+      if (['5', '7'].includes(dauSoCo)) {
+        // Thuế GTGT đầu ra - phải nộp (CÓ 33311)
+        butToanThue = { 
+          ...trans, 
+          TK_NO: tkNo,           // Giữ nguyên tài khoản NỢ gốc
+          TK_CO: '33311',        // Thuế GTGT đầu ra phải nộp
+          SO_TIEN: thueVAT, 
+          DIEN_GIAI: `Thuế GTGT đầu ra của ${trans.DIEN_GIAI || 'chứng từ ' + trans.SO_CT}` 
+        };
+        console.log(`✅ Thuế đầu ra: ${tkNo} → 33311 (${thueVAT.toLocaleString()}đ)`);
       } 
-      else if (['5', '7'].includes(dauSoCo)) {
-        butToanThue = { ...trans, TK_NO: tkNo, TK_CO: '33311', SO_TIEN: thueVAT, DIEN_GIAI: `Thuế GTGT của ${trans.DIEN_GIAI || 'chứng từ ' + trans.SO_CT}` };
+      // ƯU TIÊN 2: Kiểm tra tài khoản NỢ (chi phí, tài sản)
+      else if (['1', '2', '6', '8'].includes(dauSoNo)) {
+        // Thuế GTGT đầu vào - được khấu trừ (NỢ 1331)
+        butToanThue = { 
+          ...trans, 
+          TK_NO: '1331',         // Thuế GTGT đầu vào
+          TK_CO: tkCo,           // Giữ nguyên tài khoản CÓ gốc
+          SO_TIEN: thueVAT, 
+          DIEN_GIAI: `Thuế GTGT đầu vào của ${trans.DIEN_GIAI || 'chứng từ ' + trans.SO_CT}` 
+        };
+        console.log(`✅ Thuế đầu vào: 1331 → ${tkCo} (${thueVAT.toLocaleString()}đ)`);
+      }
+      // Trường hợp không xác định được loại thuế
+      else {
+        console.log(`⚠️ Không xác định được loại thuế GTGT: NỢ ${tkNo}, CÓ ${tkCo}`);
       }
       
-      if(butToanThue) {
+      if (butToanThue) {
         finalTransactions.push(butToanThue);
       }
     }
   }
+  
+  console.log(`📊 Tổng kết: ${finalTransactions.length} giao dịch sau khi xử lý thuế GTGT`);
   return finalTransactions;
 }
 
