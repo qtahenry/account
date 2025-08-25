@@ -224,14 +224,14 @@ function onEdit(e) {
 // CONFIG CỘT CHO TỪNG LOẠI BÁO CÁO
 const REPORT_COLUMN_CONFIGS = {
   CDPS: {
-    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'THUE_VAT', 'LOAI_CT'],
+    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'THUE_VAT', 'TK_THUE'],
     mapping: {
       'NGAY_HT': 'ngay',
       'TK_NO': 'tkNo', 
       'TK_CO': 'tkCo',
       'SO_TIEN': 'soTien',
       'THUE_VAT': 'thueVAT',
-      'LOAI_CT': 'loaiCT'
+      'TK_THUE': 'tkThue'
     }
   },
   NXT: {
@@ -540,30 +540,27 @@ function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
     return [soDuNoCuoi, soDuCoCuoi];
   }
   
-  // Hàm xử lý VAT
-  function xuLyVAT(tkNo, tkCo, tienVAT, phanLoai) {
-    if (!tienVAT || tienVAT <= 0) return [];
+  // Hàm xử lý VAT - Cập nhật để sử dụng TK_THUE
+  function xuLyVAT(tkNo, tkCo, tienVAT, tkThue) {
+    if (!tienVAT || tienVAT <= 0 || !tkThue) return [];
     
     const giaoDichVAT = [];
-    const tkNoStr = tkNo?.toString().trim() || '';
-    const tkCoStr = tkCo?.toString().trim() || '';
-    const laTKHQ = (phanLoai?.toString().trim().toUpperCase() === 'TKHQ');
+    const tkThueStr = tkThue?.toString().trim() || '';
     
-    if (tkNoStr && ['1', '2', '6', '8'].includes(tkNoStr.charAt(0))) {
-      const tkVATDauVao = tkNoStr.startsWith('211') ? '1332' : '1331';
+    // Xử lý thuế dựa trên TK_THUE cụ thể
+    if (tkThueStr === '1331' || tkThueStr === '1332') {
+      // Phát sinh NỢ tài khoản thuế, tài khoản đối ứng là TK_CO
       giaoDichVAT.push({
-        tkNo: tkVATDauVao,
+        tkNo: tkThueStr,
         tkCo: tkCo,
         soTien: tienVAT,
         loai: 'VAT_DAU_VAO'
       });
-    }
-    
-    if (tkCoStr && ['5', '7'].includes(tkCoStr.charAt(0))) {
-      const tkVATDauRa = laTKHQ ? '33312' : '33311';
+    } else if (tkThueStr === '33311' || tkThueStr === '33312') {
+      // Phát sinh CÓ tài khoản thuế, tài khoản đối ứng là TK_NO
       giaoDichVAT.push({
         tkNo: tkNo,
-        tkCo: tkVATDauRa,
+        tkCo: tkThueStr,
         soTien: tienVAT,
         loai: 'VAT_DAU_RA'
       });
@@ -675,7 +672,7 @@ function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
         tkCo: row.tkCo,
         soTien: row.soTien,
         thueVAT: row.thueVAT,
-        loaiCT: row.loaiCT
+        tkThue: row.tkThue
       });
     }
     
@@ -684,7 +681,7 @@ function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
     const tkCo = row.tkCo?.toString().trim();
     const tienHang = parseFloat(row.soTien) || 0;
     const tienVAT = parseFloat(row.thueVAT) || 0;
-    const phanLoai = row.loaiCT?.toString().trim();
+    const tkThue = row.tkThue?.toString().trim();
     
     const laGiaoDichTruocKy = ngayHachToan < startDate;
     const laGiaoDichTrongKy = ngayHachToan >= startDate && ngayHachToan <= endDate;
@@ -751,7 +748,7 @@ function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
       }
       
       if (tienVAT > 0) {
-        const giaoDichVAT = xuLyVAT(tkNo, tkCo, tienVAT, phanLoai);
+        const giaoDichVAT = xuLyVAT(tkNo, tkCo, tienVAT, tkThue);
         
         for (const vatGD of giaoDichVAT) {
           if (vatGD.tkNo) {
