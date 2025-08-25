@@ -31,9 +31,13 @@
 
 ## 🔧 Tính năng chính
 
-### **1. Xử lý thuế từ TK_THUE**
+### **1. Xử lý giao dịch và thuế từ TK_THUE**
 ```javascript
-// Logic xử lý:
+// Logic xử lý giao dịch:
+// Tất cả giao dịch hợp lệ (có NGAY_HT, TK_NO, TK_CO, SO_TIEN > 0) → Đưa vào báo cáo
+// Giao dịch có thuế (THUE_VAT > 0, TK_THUE) → Tạo thêm bút toán thuế
+
+// Logic xử lý thuế:
 // TK_THUE = "1331" hoặc "1332" → Phát sinh NỢ, đối ứng = TK_CO
 // TK_THUE = "33311" hoặc "33312" → Phát sinh CÓ, đối ứng = TK_NO
 ```
@@ -78,6 +82,7 @@ taosochitiet('2024-01-01', '2024-12-31', ['111', '112', '131']);
 testTaosochitiet();        // Test toàn bộ hàm
 testReadDataWithThue();     // Test đọc dữ liệu
 testTaoPhatSinhThue();      // Test tạo bút toán thuế
+testXuLyGiaoDichVaThue();   // Test xử lý giao dịch với và không có thuế
 ```
 
 ## 🔄 So sánh với hàm cũ

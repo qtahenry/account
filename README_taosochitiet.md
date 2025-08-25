@@ -29,7 +29,18 @@ Hàm `taosochitiet` là phiên bản cải tiến của hàm `taosochitiettaikho
 - `SO_TIEN`: Số tiền phát sinh
 - `THUE_VAT`: Số tiền thuế phát sinh
 
-## 🧮 Logic xử lý thuế
+## 🧮 Logic xử lý giao dịch và thuế
+
+### Quy tắc xử lý giao dịch:
+1. **Tất cả giao dịch hợp lệ** sẽ được đưa vào báo cáo nếu có:
+   - Ngày ghi sổ (NGAY_HT)
+   - Tài khoản nợ (TK_NO)
+   - Tài khoản có (TK_CO)
+   - Số tiền > 0 (SO_TIEN)
+
+2. **Giao dịch có thuế** sẽ được tạo thêm bút toán thuế nếu có:
+   - Thuế VAT > 0 (THUE_VAT)
+   - Tài khoản thuế (TK_THUE)
 
 ### Quy tắc tạo bút toán thuế:
 1. **Nếu TK_THUE = "1331" hoặc "1332"**:
@@ -102,6 +113,9 @@ testReadDataWithThue();
 
 // Test tạo bút toán thuế
 testTaoPhatSinhThue();
+
+// Test xử lý giao dịch với và không có thuế
+testXuLyGiaoDichVaThue();
 ```
 
 ### Kiểm tra log:

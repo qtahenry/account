@@ -3209,8 +3209,8 @@ function isValidRowDataWithThue(row, headerRow, requiredColumns) {
       
       const value = row[colIndex];
       
-      // Đối với TK_THUE, cho phép rỗng (không bắt buộc)
-      if (requiredCol === 'TK_THUE') {
+      // Đối với TK_THUE và THUE_VAT, cho phép rỗng (không bắt buộc)
+      if (requiredCol === 'TK_THUE' || requiredCol === 'THUE_VAT') {
         continue;
       }
       
@@ -3219,7 +3219,15 @@ function isValidRowDataWithThue(row, headerRow, requiredColumns) {
       }
       
       // Kiểm tra đặc biệt cho các cột số
-      if (['SO_TIEN', 'THUE_VAT'].includes(requiredCol)) {
+      if (requiredCol === 'SO_TIEN') {
+        const numValue = parseFloat(value);
+        if (isNaN(numValue) || numValue <= 0) {
+          return false;
+        }
+      }
+      
+      // Đối với THUE_VAT, nếu có giá trị thì phải >= 0
+      if (requiredCol === 'THUE_VAT' && value !== null && value !== undefined && value !== '') {
         const numValue = parseFloat(value);
         if (isNaN(numValue) || numValue < 0) {
           return false;
@@ -3246,12 +3254,14 @@ function xuLyPhatSinhThueTuTK_THUE(transactionsRaw) {
     const tkCo = trans.TK_CO?.toString().trim();
     const tkThue = trans.TK_THUE?.toString().trim();
     
-    // Thêm giao dịch gốc nếu có số tiền và tài khoản hợp lệ
-    if (soTien > 0 && tkNo && tkCo) {
+    // Thêm TẤT CẢ giao dịch gốc nếu có đủ điều kiện cơ bản
+    // Điều kiện: có ngày ghi sổ, tài khoản nợ, tài khoản có, số tiền > 0
+    if (trans.NGAY_HT && tkNo && tkCo && soTien > 0) {
       finalTransactions.push({ ...trans, SO_TIEN: soTien });
     }
 
-    // Xử lý phát sinh thuế từ TK_THUE
+    // Xử lý phát sinh thuế từ TK_THUE (nếu có)
+    // Chỉ tạo bút toán thuế khi có thuế VAT > 0 và có TK_THUE
     if (thueVAT > 0 && tkThue) {
       const phatSinhThue = taoPhatSinhThue(tkThue, tkNo, tkCo, thueVAT, trans);
       if (phatSinhThue) {
