@@ -563,6 +563,10 @@
         <button onclick="testFilterHangHoa()" style="margin-left: 10px; padding: 5px;">🧪 Test Filter</button>
         <button onclick="debugHangHoaData()" style="margin-left: 10px; padding: 5px;">🐛 Debug Data</button>
         <button onclick="manualTestSearch()" style="margin-left: 10px; padding: 5px;">🔍 Test Search</button>
+        <button onclick="simpleTestSearch()" style="margin-left: 10px; padding: 5px; background: #ff6b6b; color: white;">🚀 Simple Test</button>
+        <button onclick="checkDataLoaded()" style="margin-left: 10px; padding: 5px; background: #4ecdc4; color: white;">📊 Check Data</button>
+        <button onclick="forceReloadData()" style="margin-left: 10px; padding: 5px; background: #f0ad4e; color: white;">🔄 Force Reload</button>
+        <button onclick="filterHangHoaSimple()" style="margin-left: 10px; padding: 5px; background: #9b59b6; color: white;">🎯 Test Simple Filter</button>
       </div>
     </div>
 
@@ -858,6 +862,88 @@
       }
       
       console.log('=== loadHangHoa END ==='); // Debug log
+    }
+
+    // Hàm force reload dữ liệu
+    function forceReloadData() {
+      console.log('🔄 === FORCE RELOAD DATA ===');
+      
+      // Reset dữ liệu
+      allHangHoa = [];
+      selectedHangHoaIds.clear();
+      
+      // Clear danh sách
+      const listElement = document.getElementById('hanghoaList');
+      if (listElement) {
+        listElement.innerHTML = '<div id="loadingHangHoa" style="padding: 20px; text-align: center; color: #5f6368;">Đang tải lại dữ liệu...</div>';
+      }
+      
+      // Load lại dữ liệu
+      setTimeout(() => {
+        loadHangHoa();
+      }, 500);
+      
+      console.log('🔄 === FORCE RELOAD DATA END ===');
+    }
+
+    // Hàm kiểm tra dữ liệu đã load
+    function checkDataLoaded() {
+      console.log('🔍 === CHECK DATA LOADED ===');
+      console.log('📊 allHangHoa:', allHangHoa);
+      console.log('📊 Type:', typeof allHangHoa);
+      console.log('📊 Is Array:', Array.isArray(allHangHoa));
+      console.log('📊 Length:', allHangHoa ? allHangHoa.length : 'undefined');
+      
+      if (allHangHoa && Array.isArray(allHangHoa) && allHangHoa.length > 0) {
+        console.log('✅ Data is loaded correctly');
+        console.log('📋 First item:', allHangHoa[0]);
+        console.log('📋 Last item:', allHangHoa[allHangHoa.length - 1]);
+        
+        // Test render
+        console.log('🎨 Testing render...');
+        renderHangHoaList(allHangHoa);
+      } else {
+        console.log('❌ Data is not loaded correctly');
+      }
+      
+      console.log('🔍 === CHECK DATA LOADED END ===');
+    }
+
+    // Hàm test đơn giản để kiểm tra tìm kiếm
+    function simpleTestSearch() {
+      console.log('🧪 === SIMPLE TEST SEARCH START ===');
+      
+      // Kiểm tra dữ liệu
+      console.log('📊 allHangHoa:', allHangHoa);
+      console.log('📊 Length:', allHangHoa ? allHangHoa.length : 'undefined');
+      
+      if (!allHangHoa || allHangHoa.length === 0) {
+        console.log('❌ No data available for testing');
+        return;
+      }
+      
+      // Test với từ khóa đầu tiên có trong dữ liệu
+      const firstItem = allHangHoa[0];
+      if (firstItem && firstItem.maKho) {
+        const testTerm = firstItem.maKho.substring(0, 2); // Lấy 2 ký tự đầu
+        console.log('🔍 Testing with term:', testTerm);
+        
+        // Set giá trị vào input
+        const searchInput = document.getElementById('hanghoaSearchInput');
+        if (searchInput) {
+          searchInput.value = testTerm;
+          console.log('✅ Set search input to:', testTerm);
+          
+          // Gọi hàm filter
+          filterHangHoa();
+        } else {
+          console.log('❌ Search input not found');
+        }
+      } else {
+        console.log('❌ First item is invalid:', firstItem);
+      }
+      
+      console.log('🧪 === SIMPLE TEST SEARCH END ===');
     }
 
     // Hàm để đảm bảo tìm kiếm hoạt động
@@ -1344,91 +1430,70 @@
     
     function renderHangHoaList(hangHoaToRender) {
       console.log('=== renderHangHoaList START ==='); // Debug log
-      console.log('hangHoaToRender:', hangHoaToRender); // Debug log
-      console.log('hangHoaToRender length:', hangHoaToRender.length); // Debug log
+      console.log('📥 Input data:', hangHoaToRender);
+      console.log('📥 Input length:', hangHoaToRender ? hangHoaToRender.length : 'undefined');
       
-      try {
-        const listElement = document.getElementById('hanghoaList');
-        console.log('listElement:', listElement); // Debug log
-        
-        const loadingElement = document.getElementById('loadingHangHoa');
-        console.log('loadingElement:', loadingElement); // Debug log
-        
-        if (!listElement) {
-          console.error('hanghoaList element not found!'); // Debug log
-          return;
-        }
-        
-        if (!loadingElement) {
-          console.error('loadingHangHoa element not found!'); // Debug log
-          return;
-        }
-        
-        // Kiểm tra dữ liệu đầu vào
-        if (!hangHoaToRender || !Array.isArray(hangHoaToRender)) {
-          console.error('hangHoaToRender is invalid!'); // Debug log
-          hangHoaToRender = [];
-        }
-        
-        if (hangHoaToRender.length === 0) {
-          console.log('No items to render, showing no results message'); // Debug log
-          loadingElement.style.display = 'none';
-          listElement.innerHTML = '<div class="no-results" style="padding: 20px; text-align: center; color: #5f6368; font-style: italic;">Không tìm thấy hàng hóa phù hợp.</div>';
-          return;
-        }
-        
-        console.log('Rendering items...'); // Debug log
-        loadingElement.style.display = 'none';
-        listElement.style.display = 'block';
-        
-        let html = '';
-        let itemCount = 0; // Debug counter
-        
-        hangHoaToRender.forEach((item, index) => {
-          console.log(`Rendering item ${index}:`, item); // Debug log
-          
-          // Kiểm tra item có hợp lệ không
-          if (!item || typeof item !== 'object') {
-            console.warn(`Invalid item at index ${index}:`, item); // Debug log
-            return; // Bỏ qua item không hợp lệ
-          }
-          
-          itemCount++; // Debug counter
-          
-          const isChecked = selectedHangHoaIds.has(item.uniqueId) ? 'checked' : '';
-          html += `
-            <label class="hanghoa-item" for="hanghoa-${item.uniqueId}">
-              <input type="checkbox" id="hanghoa-${item.uniqueId}" class="hanghoa-checkbox" onchange="toggleHangHoaSelection('${item.uniqueId}')" ${isChecked}>
-              <div class="hanghoa-info">
-                <div class="hanghoa-name">${item.tenHang || 'N/A'}</div>
-                <div class="hanghoa-code">
-                  <span class="ma-kho">${item.maKho || 'N/A'}</span><span>${item.maHang || 'N/A'}</span>
-                </div>
-                <div class="hanghoa-details">Quy cách: ${item.quyCach || 'N/A'} | ĐVT: ${item.dvt || 'N/A'}</div>
-              </div>
-            </label>
-          `;
-        });
-        
-        console.log('Total items processed:', itemCount); // Debug counter
-        console.log('Final HTML length:', html.length); // Debug log
-        console.log('HTML preview (first 500 chars):', html.substring(0, 500)); // Debug log
-        
-        // Cập nhật DOM
-        listElement.innerHTML = html;
-        
-        // Kiểm tra xem HTML có được set đúng không
-        console.log('After setting innerHTML, listElement.children.length:', listElement.children.length); // Debug log
-        
-        console.log('=== renderHangHoaList END ==='); // Debug log
-        
-      } catch (error) {
-        console.error('Error in renderHangHoaList:', error); // Debug log
-        // Hiển thị thông báo lỗi
-        if (listElement) {
-          listElement.innerHTML = '<div class="error" style="padding: 20px; text-align: center; color: #dc3545;">Lỗi hiển thị danh sách hàng hóa.</div>';
-        }
+      // Lấy DOM elements
+      const listElement = document.getElementById('hanghoaList');
+      const loadingElement = document.getElementById('loadingHangHoa');
+      
+      if (!listElement) {
+        console.error('❌ hanghoaList element not found!');
+        return;
       }
+      
+      if (!loadingElement) {
+        console.error('❌ loadingHangHoa element not found!');
+        return;
+      }
+      
+      // Kiểm tra dữ liệu đầu vào
+      if (!hangHoaToRender || !Array.isArray(hangHoaToRender) || hangHoaToRender.length === 0) {
+        console.log('📝 No data to render, showing empty message');
+        loadingElement.style.display = 'none';
+        listElement.innerHTML = '<div style="padding: 20px; text-align: center; color: #5f6368; font-style: italic;">Không tìm thấy hàng hóa phù hợp.</div>';
+        return;
+      }
+      
+      console.log('🎨 Rendering items...');
+      
+      // Ẩn loading, hiển thị danh sách
+      loadingElement.style.display = 'none';
+      listElement.style.display = 'block';
+      
+      // Tạo HTML
+      let html = '';
+      let count = 0;
+      
+      for (let i = 0; i < hangHoaToRender.length; i++) {
+        const item = hangHoaToRender[i];
+        if (!item) continue;
+        
+        count++;
+        const isChecked = selectedHangHoaIds.has(item.uniqueId) ? 'checked' : '';
+        
+        html += `
+          <label class="hanghoa-item" for="hanghoa-${item.uniqueId}">
+            <input type="checkbox" id="hanghoa-${item.uniqueId}" class="hanghoa-checkbox" onchange="toggleHangHoaSelection('${item.uniqueId}')" ${isChecked}>
+            <div class="hanghoa-info">
+              <div class="hanghoa-name">${item.tenHang || 'N/A'}</div>
+              <div class="hanghoa-code">
+                <span class="ma-kho">${item.maKho || 'N/A'}</span><span>${item.maHang || 'N/A'}</span>
+              </div>
+              <div class="hanghoa-details">Quy cách: ${item.quyCach || 'N/A'} | ĐVT: ${item.dvt || 'N/A'}</div>
+            </div>
+          </label>
+        `;
+      }
+      
+      console.log(`✅ Generated HTML for ${count} items`);
+      console.log(`📏 HTML length: ${html.length} characters`);
+      
+      // Cập nhật DOM
+      listElement.innerHTML = html;
+      
+      console.log(`🎯 DOM updated. Children count: ${listElement.children.length}`);
+      console.log('=== renderHangHoaList END ==='); // Debug log
     }
 
     function toggleHangHoaSelection(uniqueId) {
@@ -1450,67 +1515,62 @@
       }
     }
 
-    function filterHangHoa() {
-      console.log('=== filterHangHoa START ==='); // Debug log
+    // Hàm filter đơn giản và mới
+    function filterHangHoaSimple() {
+      console.log('🚀 === FILTER HANG HOA SIMPLE START ===');
       
-      try {
-        const searchInput = document.getElementById('hanghoaSearchInput');
-        console.log('searchInput element:', searchInput); // Debug log
-        
-        if (!searchInput) {
-          console.error('hanghoaSearchInput element not found!'); // Debug log
-          return;
-        }
-        
-        const searchTerm = searchInput.value.toLowerCase().trim();
-        console.log('searchTerm:', searchTerm); // Debug log
-        
-        const clearBtn = document.getElementById('clearHangHoaSearch');
-        console.log('clearBtn element:', clearBtn); // Debug log
-        
-        console.log('allHangHoa:', allHangHoa); // Debug log
-        console.log('allHangHoa length:', allHangHoa.length); // Debug log
-        
-        // Kiểm tra xem allHangHoa có dữ liệu không
-        if (!allHangHoa || !Array.isArray(allHangHoa) || allHangHoa.length === 0) {
-          console.error('allHangHoa is empty or invalid!'); // Debug log
-          return;
-        }
-        
-        if (searchTerm) {
-          clearBtn.style.display = 'block';
-          
-          // Cải thiện logic filter với validation
-          const filtered = allHangHoa.filter(item => {
-            if (!item || typeof item !== 'object') return false;
-            
-            const maKho = (item.maKho || '').toString().toLowerCase();
-            const maHang = (item.maHang || '').toString().toLowerCase();
-            const tenHang = (item.tenHang || '').toString().toLowerCase();
-            
-            return maKho.includes(searchTerm) || 
-                   maHang.includes(searchTerm) ||
-                   tenHang.includes(searchTerm);
-          });
-          
-          console.log('Filtered results:', filtered); // Debug log
-          console.log('Filtered results length:', filtered.length); // Debug log
-          
-          // Render danh sách đã lọc
-          renderHangHoaList(filtered);
-        } else {
-          clearBtn.style.display = 'none';
-          // Hiển thị lại tất cả hàng hóa
-          renderHangHoaList(allHangHoa);
-        }
-        
-        console.log('=== filterHangHoa END ==='); // Debug log
-        
-      } catch (error) {
-        console.error('Error in filterHangHoa:', error); // Debug log
-        // Hiển thị lại tất cả hàng hóa nếu có lỗi
-        renderHangHoaList(allHangHoa);
+      // Lấy input
+      const input = document.getElementById('hanghoaSearchInput');
+      if (!input) {
+        console.log('❌ Input not found');
+        return;
       }
+      
+      const term = input.value.toLowerCase().trim();
+      console.log('🔍 Search term:', term);
+      
+      // Kiểm tra dữ liệu
+      if (!allHangHoa || !Array.isArray(allHangHoa) || allHangHoa.length === 0) {
+        console.log('❌ No data available');
+        return;
+      }
+      
+      console.log('📊 Total items:', allHangHoa.length);
+      
+      // Nếu không có từ khóa, hiển thị tất cả
+      if (!term) {
+        console.log('🔄 No term, showing all');
+        renderHangHoaList(allHangHoa);
+        return;
+      }
+      
+      // Filter
+      const results = [];
+      for (let i = 0; i < allHangHoa.length; i++) {
+        const item = allHangHoa[i];
+        if (!item) continue;
+        
+        const kho = String(item.maKho || '').toLowerCase();
+        const hang = String(item.maHang || '').toLowerCase();
+        const ten = String(item.tenHang || '').toLowerCase();
+        
+        if (kho.includes(term) || hang.includes(term) || ten.includes(term)) {
+          results.push(item);
+        }
+      }
+      
+      console.log('✅ Filtered results:', results.length);
+      console.log('📋 Results:', results);
+      
+      // Render
+      renderHangHoaList(results);
+      
+      console.log('🚀 === FILTER HANG HOA SIMPLE END ===');
+    }
+
+    function filterHangHoa() {
+      // Gọi hàm filter đơn giản
+      filterHangHoaSimple();
     }
 
     function clearHangHoaSearch() {
