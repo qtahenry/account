@@ -218,20 +218,19 @@ function onEdit(e) {
   }
 }
 
-
 // ==================== UNIVERSAL DATA READER ====================
 
-// CONFIG CỘT CHO TỪNG LOẠI BÁO CÁO
 const REPORT_COLUMN_CONFIGS = {
   CDPS: {
-    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'THUE_VAT', 'TK_THUE'],
+    // ⭐ THAY ĐỔI 1: Đã xóa 'TK_THUE' khỏi danh sách cột bắt buộc
+    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'THUE_VAT'],
     mapping: {
       'NGAY_HT': 'ngay',
       'TK_NO': 'tkNo', 
       'TK_CO': 'tkCo',
       'SO_TIEN': 'soTien',
       'THUE_VAT': 'thueVAT',
-      'TK_THUE': 'tkThue'
+      'TK_THUE': 'tkThue' // Vẫn giữ mapping để đọc dữ liệu nếu cột tồn tại
     }
   },
   NXT: {
@@ -248,20 +247,13 @@ const REPORT_COLUMN_CONFIGS = {
     }
   }
 };
-
 // HÀM ĐỌC DỮ LIỆU UNIVERSAL
 function getAllDataFromDLSheets(spreadsheet, reportType, filterCondition = null) {
   const config = REPORT_COLUMN_CONFIGS[reportType];
-  if (!config) {
-    throw new Error(`Không tìm thấy config cho loại báo cáo: ${reportType}`);
-  }
+  if (!config) throw new Error(`Không tìm thấy config cho loại báo cáo: ${reportType}`);
   
-  const allSheets = spreadsheet.getSheets();
-  const dataSheets = allSheets.filter(sheet => sheet.getName().startsWith('DL_'));
-  
-  if (dataSheets.length === 0) {
-    throw new Error('Không tìm thấy sheet nào bắt đầu với "DL_"');
-  }
+  const dataSheets = spreadsheet.getSheets().filter(sheet => sheet.getName().startsWith('DL_'));
+  if (dataSheets.length === 0) throw new Error('Không tìm thấy sheet nào bắt đầu với "DL_"');
   
   const combinedData = [];
   const processSummary = {
@@ -278,7 +270,6 @@ function getAllDataFromDLSheets(spreadsheet, reportType, filterCondition = null)
         combinedData.push(...sheetData);
         processSummary.totalRows += sheetData.length;
         processSummary.validSheets++;
-        console.log(`✅ Sheet "${sheet.getName()}": ${sheetData.length} dòng`);
       }
     } catch (error) {
       processSummary.errors.push(`${sheet.getName()}: ${error.message}`);
@@ -287,111 +278,73 @@ function getAllDataFromDLSheets(spreadsheet, reportType, filterCondition = null)
   }
   
   console.log(`📊 Tổng kết ${reportType}: ${processSummary.validSheets}/${processSummary.totalSheets} sheets, ${processSummary.totalRows} dòng`);
-
-  return {
-    data: combinedData,
-    summary: processSummary
-  };
+  return { data: combinedData, summary: processSummary };
 }
-
 // HÀM XỬ LÝ UNIVERSAL CHO MỘT SHEET
 function processUniversalDataSheet(sheet, config, filterCondition) {
   const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
   
-  if (data.length <= 1) {
-    return [];
-  }
-  
-  // Map columns theo config
   const headerRow = data[0];
   const columnMap = mapUniversalColumns(headerRow, config, sheet.getName());
-  
-  if (!columnMap.isValid) {
-    throw new Error(`Thiếu cột: ${columnMap.missingColumns.join(', ')}`);
-  }
+  if (!columnMap.isValid) throw new Error(`Thiếu cột: ${columnMap.missingColumns.join(', ')}`);
   
   const processedData = [];
   
-  // Xử lý từ dòng 2 trở đi
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
-    const processedRow = {
-      sheet: sheet.getName(),
-      row: i + 1
-    };
+    const processedRow = { sheet: sheet.getName(), row: i + 1 };
     
-    // Map dữ liệu theo config
     let hasValidData = false;
     for (const [headerName, propName] of Object.entries(config.mapping)) {
       const colIndex = columnMap[propName];
-      let value = row[colIndex];
+      let value = (colIndex !== undefined) ? row[colIndex] : undefined;
       
-      // Xử lý theo type dữ liệu
       if (['soTien', 'thueVAT', 'soLuong', 'donGia'].includes(propName)) {
         value = parseFloat(value) || 0;
       } else if (propName === 'ngay') {
-        if (!value) continue; // Bỏ qua dòng không có ngày
+        if (!value) continue;
         hasValidData = true;
       } else {
         value = value?.toString().trim() || '';
       }
       
       processedRow[propName] = value;
-      
-      // Check điều kiện có dữ liệu hợp lệ
-      if (propName !== 'ngay' && value) {
-        hasValidData = true;
-      }
+      if (propName !== 'ngay' && value) hasValidData = true;
     }
     
-    // Bỏ qua dòng không có dữ liệu
     if (!hasValidData) continue;
-    
-    // Áp dụng filter condition nếu có
-    if (filterCondition && !filterCondition(processedRow)) {
-      continue;
-    }
+    if (filterCondition && !filterCondition(processedRow)) continue;
     
     processedData.push(processedRow);
   }
   
   return processedData;
 }
-
 // HÀM MAP CỘT UNIVERSAL
 function mapUniversalColumns(headerRow, config, sheetName) {
   const columnMap = {};
   const missingColumns = [];
   
-  // Tạo map header
   const headerMap = {};
-  for (let i = 0; i < headerRow.length; i++) {
-    const headerName = headerRow[i]?.toString().trim().toUpperCase();
-    if (headerName) {
-      headerMap[headerName] = i;
-    }
-  }
+  headerRow.forEach((h, i) => {
+    const headerName = h?.toString().trim().toUpperCase();
+    if (headerName) headerMap[headerName] = i;
+  });
   
-  // Map các cột theo config
   for (const [headerName, propName] of Object.entries(config.mapping)) {
     if (headerMap.hasOwnProperty(headerName)) {
       columnMap[propName] = headerMap[headerName];
-    } else {
+    } else if (config.required.includes(headerName)) {
       missingColumns.push(headerName);
     }
   }
   
-  return {
-    ...columnMap,
-    isValid: missingColumns.length === 0,
-    missingColumns: missingColumns
-  };
+  return { ...columnMap, isValid: missingColumns.length === 0, missingColumns };
 }
-
 // HÀM TẠO SUMMARY UNIVERSAL
 function createDataSummary(spreadsheet, reportType) {
-  const allSheets = spreadsheet.getSheets();
-  const dataSheets = allSheets.filter(sheet => sheet.getName().startsWith('DL_'));
+  const dataSheets = spreadsheet.getSheets().filter(sheet => sheet.getName().startsWith('DL_'));
   const config = REPORT_COLUMN_CONFIGS[reportType];
   
   let summary = `- Tìm thấy ${dataSheets.length} sheet dữ liệu:\n`;
@@ -426,509 +379,202 @@ function createDataSummary(spreadsheet, reportType) {
   return summary;
 }
 
-// ==================== CÁC HÀM BÁO CÁO SỬ DỤNG UNIVERSAL READER ====================
+// ==================== HÀM BÁO CÁO CHÍNH ====================
 
 function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();
   
   try {
-    // Lấy các sheet
     const sheetDMTK = ss.getSheetByName('DMTK');
     const sheetCDPS = ss.getSheetByName('CDPS');
+    if (!sheetDMTK || !sheetCDPS) throw new Error('Không tìm thấy sheet DMTK hoặc CDPS');
     
-    if (!sheetDMTK || !sheetCDPS) {
-      throw new Error('Không tìm thấy sheet DMTK hoặc CDPS');
-    }
-    
-    // Lấy ngày bắt đầu và kết thúc từ tham số hoặc từ sheet CDPS
     let startDate, endDate;
-    
     if (ngayBatDau && ngayKetThuc) {
       startDate = new Date(ngayBatDau);
       endDate = new Date(ngayKetThuc);
-      console.log(`📅 Sử dụng ngày từ sidebar: ${startDate.toLocaleDateString('vi-VN')} → ${endDate.toLocaleDateString('vi-VN')}`);
     } else {
       startDate = new Date(ss.getRangeByName('NgayBatDau_CDPS').getValue());
       endDate = new Date(ss.getRangeByName('NgayKetThuc_CDPS').getValue());
-      console.log(`📅 Sử dụng ngày từ sheet: ${startDate.toLocaleDateString('vi-VN')} → ${endDate.toLocaleDateString('vi-VN')}`);
     }
+    if (!startDate || !endDate) throw new Error('Vui lòng nhập ngày bắt đầu và ngày kết thúc');
     
-    if (!startDate || !endDate) {
-      throw new Error('Vui lòng nhập ngày bắt đầu và ngày kết thúc');
-    }
-    
-    // ĐỌC FILTER TỪ PROPERTIES SERVICE
     const selectedAccounts = getSelectedAccounts();
     const isFiltered = selectedAccounts.length > 0;
     
-    // Thông báo nếu có filter
-    if (isFiltered) {
-      console.log(`🔍 Áp dụng filter: ${selectedAccounts.length} tài khoản được chọn`);
-      ss.toast(`Đang tạo báo cáo cho ${selectedAccounts.length} tài khoản đã chọn...`, 'Bắt đầu', -1);
-    } else {
-      console.log('🔍 Không có filter → bao gồm tất cả tài khoản có phát sinh');
-      ss.toast('Đang tạo báo cáo cho tất cả tài khoản có phát sinh...', 'Bắt đầu', -1);
+    ss.toast('Đang đọc dữ liệu...', 'Bước 1/4', -1);
+    const dataResult = getAllDataFromDLSheets(ss, 'CDPS');
+    const combinedData = dataResult.data;
+    
+    const taiKhoanMap = new Map();
+    
+    function xacDinhTinhChatTaiKhoan(maTK) {
+      const kyTuDau = maTK.toString().charAt(0);
+      if (['1', '2', '6', '8'].includes(kyTuDau)) return 'TAI_SAN_CHI_PHI';
+      if (['3', '4', '5', '7'].includes(kyTuDau)) return 'NO_VON_DOANH_THU';
+      return 'KHAC';
     }
     
-    // Lấy dữ liệu từ sheet DMTK
+    function tinhSoDuSauPhatSinh(duNoDauKy, duCoDauKy, phatSinhNo, phatSinhCo, tinhChatTK) {
+      let soDuNoCuoi = 0, soDuCoCuoi = 0;
+      if (tinhChatTK === 'TAI_SAN_CHI_PHI') {
+        const soDuThuan = (duNoDauKy + phatSinhNo) - (duCoDauKy + phatSinhCo);
+        if (soDuThuan >= 0) soDuNoCuoi = soDuThuan;
+        else soDuCoCuoi = Math.abs(soDuThuan);
+      } else { // NO_VON_DOANH_THU và KHAC
+        const soDuThuan = (duCoDauKy + phatSinhCo) - (duNoDauKy + phatSinhNo);
+        if (soDuThuan >= 0) soDuCoCuoi = soDuThuan;
+        else soDuNoCuoi = Math.abs(soDuThuan);
+      }
+      return [soDuNoCuoi, soDuCoCuoi];
+    }
+    
+    function xuLyVAT(tkNo, tkCo, tienVAT, tkThue) {
+      if (!tienVAT || tienVAT <= 0 || !tkThue) return [];
+      const tkThueStr = tkThue.toString().trim();
+      if (['1331', '1332'].includes(tkThueStr)) return [{ tkNo: tkThueStr, tkCo, soTien: tienVAT }];
+      if (['33311', '33312'].includes(tkThueStr)) return [{ tkNo, tkCo: tkThueStr, soTien: tienVAT }];
+      return [];
+    }
+    
+    function timTaiKhoanCha(maTK, capTaiKhoan) {
+      const ma = maTK.toString().trim();
+      const taiKhoanCha = [];
+      if (capTaiKhoan === 3 && ma.length >= 4) {
+        taiKhoanCha.push(ma.substring(0, 4));
+        taiKhoanCha.push(ma.substring(0, 3));
+      } else if (capTaiKhoan === 2 && ma.length >= 3) {
+        taiKhoanCha.push(ma.substring(0, 3));
+      }
+      return taiKhoanCha;
+    }
+    
+    function kiemTraTaiKhoanThuocFilter(maTK) {
+      if (!isFiltered) return true;
+      const ma = maTK.toString().trim();
+      return selectedAccounts.some(selectedTK => ma.startsWith(selectedTK));
+    }
+    
+    ss.toast('Đang đọc danh mục tài khoản...', 'Bước 2/4', -1);
     const dataDMTK = sheetDMTK.getDataRange().getValues();
-    const headerRowDMTK = 1;
-  
-  // ĐỌC DỮ LIỆU TỪ NHIỀU SHEET DL_* BẰNG UNIVERSAL READER
-  ss.toast('Đang đọc dữ liệu từ các sheet DL_...', 'Bước 1/4', -1);
-  const dataResult = getAllDataFromDLSheets(ss, 'CDPS');
-  const combinedData = dataResult.data;
-  ss.toast(`✅ Đã đọc ${combinedData.length} giao dịch từ ${dataResult.summary.validSheets} sheet`, 'Bước 1/4', 3);
-  
-  // Tạo map để lưu trữ thông tin tài khoản
-  const taiKhoanMap = new Map();
-  
-  // Hàm xác định tính chất tài khoản
-  function xacDinhTinhChatTaiKhoan(maTK) {
-    const kyTuDau = maTK.toString().charAt(0);
-    
-    if (['1', '2'].includes(kyTuDau)) {
-      return 'TAI_SAN';
-    } else if (['3', '4'].includes(kyTuDau)) {
-      return 'NO_VON';
-    } else if (['5', '7'].includes(kyTuDau)) {
-      return 'DOANH_THU';
-    } else if (['6', '8'].includes(kyTuDau)) {
-      return 'CHI_PHI';
+    for (let i = 1; i < dataDMTK.length; i++) {
+      const row = dataDMTK[i];
+      const maTK = row[0]?.toString().trim();
+      if (maTK) {
+        taiKhoanMap.set(maTK, {
+          ten: row[1]?.toString().trim(),
+          loai: parseInt(row[2]) || 0,
+          duNoDauKyGoc: parseFloat(row[3]) || 0,
+          duCoDauKyGoc: parseFloat(row[4]) || 0,
+          phatSinhNoTruocKy: 0, phatSinhCoTruocKy: 0,
+          phatSinhNoTrongKy: 0, phatSinhCoTrongKy: 0,
+          tinhChat: xacDinhTinhChatTaiKhoan(maTK)
+        });
+      }
     }
     
-    return 'KHAC';
-  }
-  
-  // Hàm tính số dư sau phát sinh
-  function tinhSoDuSauPhatSinh(duNoDauKy, duCoDauKy, phatSinhNo, phatSinhCo, tinhChatTK) {
-    let soDuNoCuoi = 0;
-    let soDuCoCuoi = 0;
+    ss.toast('Đang xử lý dữ liệu phát sinh...', 'Bước 3/4', -1);
     
-    if (tinhChatTK === 'TAI_SAN' || tinhChatTK === 'CHI_PHI') {
-      const soDuThuan = (duNoDauKy + phatSinhNo) - (duCoDauKy + phatSinhCo);
-      if (soDuThuan >= 0) {
-        soDuNoCuoi = soDuThuan;
-        soDuCoCuoi = 0;
-      } else {
-        soDuNoCuoi = 0;
-        soDuCoCuoi = Math.abs(soDuThuan);
-      }
-    } else if (tinhChatTK === 'NO_VON' || tinhChatTK === 'DOANH_THU') {
-      const soDuThuan = (duCoDauKy + phatSinhCo) - (duNoDauKy + phatSinhNo);
-      if (soDuThuan >= 0) {
-        soDuNoCuoi = 0;
-        soDuCoCuoi = soDuThuan;
-      } else {
-        soDuNoCuoi = Math.abs(soDuThuan);
-        soDuCoCuoi = 0;
-      }
-    } else {
-      const tongNo = duNoDauKy + phatSinhNo;
-      const tongCo = duCoDauKy + phatSinhCo;
+    for (const row of combinedData) {
+      const ngayHachToan = new Date(row.ngay);
+      const tkNo = row.tkNo?.toString().trim();
+      const tkCo = row.tkCo?.toString().trim();
       
-      if (tongNo > tongCo) {
-        soDuNoCuoi = tongNo - tongCo;
-        soDuCoCuoi = 0;
-      } else if (tongCo > tongNo) {
-        soDuNoCuoi = 0;
-        soDuCoCuoi = tongCo - tongNo;
+      // ⭐ THAY ĐỔI 2: Logic xử lý tiền hàng và tiền thuế
+      let tienHang = parseFloat(row.soTien) || 0;
+      const tienVAT = parseFloat(row.thueVAT) || 0;
+      const tkThue = row.tkThue?.toString().trim();
+
+      // Nếu có tiền thuế nhưng không có tài khoản thuế, cộng gộp vào tiền hàng
+      if (tienVAT > 0 && !tkThue) {
+        tienHang += tienVAT;
       }
-    }
-    
-    return [soDuNoCuoi, soDuCoCuoi];
-  }
-  
-  // Hàm xử lý VAT - Cập nhật để sử dụng TK_THUE
-  function xuLyVAT(tkNo, tkCo, tienVAT, tkThue) {
-    if (!tienVAT || tienVAT <= 0 || !tkThue) return [];
-    
-    const giaoDichVAT = [];
-    const tkThueStr = tkThue?.toString().trim() || '';
-    
-    // Xử lý thuế dựa trên TK_THUE cụ thể
-    if (tkThueStr === '1331' || tkThueStr === '1332') {
-      // Phát sinh NỢ tài khoản thuế, tài khoản đối ứng là TK_CO
-      giaoDichVAT.push({
-        tkNo: tkThueStr,
-        tkCo: tkCo,
-        soTien: tienVAT,
-        loai: 'VAT_DAU_VAO'
-      });
-    } else if (tkThueStr === '33311' || tkThueStr === '33312') {
-      // Phát sinh CÓ tài khoản thuế, tài khoản đối ứng là TK_NO
-      giaoDichVAT.push({
-        tkNo: tkNo,
-        tkCo: tkThueStr,
-        soTien: tienVAT,
-        loai: 'VAT_DAU_RA'
-      });
-    }
-    
-    return giaoDichVAT;
-  }
-  
-  // Hàm tìm tài khoản cha
-  function timTaiKhoanCha(maTK, capTaiKhoan) {
-    const ma = maTK.toString().trim();
-    const taiKhoanCha = [];
-    
-    if (capTaiKhoan === 3) {
-      if (ma.length >= 4) {
-        const ma4KyTu = ma.substring(0, 4);
-        const ma3KyTu = ma.substring(0, 3);
-        
-        for (const [maTKKhac, thongTin] of taiKhoanMap.entries()) {
-          if (thongTin.loai === 2 && maTKKhac === ma4KyTu) {
-            taiKhoanCha.push(maTKKhac);
-            break;
-          }
-        }
-        
-        for (const [maTKKhac, thongTin] of taiKhoanMap.entries()) {
-          if (thongTin.loai === 1 && maTKKhac === ma3KyTu) {
-            taiKhoanCha.push(maTKKhac);
-            break;
-          }
-        }
-      }
-    } else if (capTaiKhoan === 2) {
-      if (ma.length >= 3) {
-        const ma3KyTu = ma.substring(0, 3);
-        
-        for (const [maTKKhac, thongTin] of taiKhoanMap.entries()) {
-          if (thongTin.loai === 1 && maTKKhac === ma3KyTu) {
-            taiKhoanCha.push(maTKKhac);
-            break;
-          }
-        }
-      }
-    }
-    
-    return taiKhoanCha;
-  }
-  
-  // HÀM KIỂM TRA TÀI KHOẢN CÓ THUỘC FILTER KHÔNG
-  function kiemTraTaiKhoanThuocFilter(maTK) {
-    // Nếu không có filter (không chọn tài khoản nào) → bao gồm tất cả
-    if (!isFiltered) return true;
-    
-    const ma = maTK.toString().trim();
-    
-    // Kiểm tra xem tài khoản có thuộc danh sách đã chọn không
-    for (const selectedTK of selectedAccounts) {
-      if (ma.startsWith(selectedTK)) {
-        return true;
-      }
-    }
-    
-    return false;
-  }
-  
-  // BƯỚC 1: Đọc dữ liệu từ DMTK
-  ss.toast('Đang đọc danh mục tài khoản từ DMTK...', 'Bước 2/4', -1);
-  for (let i = headerRowDMTK; i < dataDMTK.length; i++) {
-    const row = dataDMTK[i];
-    const maTK = row[0]?.toString().trim();
-    const tenTK = row[1]?.toString().trim();
-    const loaiTK = parseInt(row[2]) || 0;
-    const duNoDauKy = parseFloat(row[3]) || 0;
-    const duCoDauKy = parseFloat(row[4]) || 0;
-    
-    if (maTK) {
-      taiKhoanMap.set(maTK, {
-        ten: tenTK,
-        loai: loaiTK,
-        duNoDauKyGoc: duNoDauKy,
-        duCoDauKyGoc: duCoDauKy,
-        phatSinhNoTruocKy: 0,
-        phatSinhCoTruocKy: 0,
-        phatSinhNoTrongKy: 0,
-        phatSinhCoTrongKy: 0,
-        tinhChat: xacDinhTinhChatTaiKhoan(maTK)
-      });
-    }
-  }
-  ss.toast(`✅ Đã đọc ${taiKhoanMap.size} tài khoản từ DMTK`, 'Bước 2/4', 3);
-  
-  // BƯỚC 2: Xử lý dữ liệu phát sinh từ TẤT CẢ CÁC SHEET DL_*
-  ss.toast('Đang xử lý dữ liệu phát sinh và tính toán số dư...', 'Bước 3/4', -1);
-  let tongGiaoDichTruocKy = 0;
-  let tongGiaoDichTrongKy = 0;
-  let tongGiaoDichVAT = 0;
-  
-  console.log(`🔍 Debug: Bắt đầu xử lý ${combinedData.length} giao dịch`);
-  console.log(`📅 Kỳ báo cáo: ${startDate.toLocaleDateString('vi-VN')} → ${endDate.toLocaleDateString('vi-VN')}`);
-  
-  for (let i = 0; i < combinedData.length; i++) {
-    const row = combinedData[i];
-    
-    // Debug: Kiểm tra cấu trúc dữ liệu
-    if (i < 3) {
-      console.log(`🔍 Giao dịch ${i + 1}:`, {
-        ngay: row.ngay,
-        tkNo: row.tkNo,
-        tkCo: row.tkCo,
-        soTien: row.soTien,
-        thueVAT: row.thueVAT,
-        tkThue: row.tkThue
-      });
-    }
-    
-    const ngayHachToan = new Date(row.ngay);
-    const tkNo = row.tkNo?.toString().trim();
-    const tkCo = row.tkCo?.toString().trim();
-    const tienHang = parseFloat(row.soTien) || 0;
-    const tienVAT = parseFloat(row.thueVAT) || 0;
-    const tkThue = row.tkThue?.toString().trim();
-    
-    const laGiaoDichTruocKy = ngayHachToan < startDate;
-    const laGiaoDichTrongKy = ngayHachToan >= startDate && ngayHachToan <= endDate;
-    
-    // Debug: Kiểm tra logic ngày tháng
-    if (i < 3) {
-      console.log(`📅 Giao dịch ${i + 1} - Ngày: ${ngayHachToan.toLocaleDateString('vi-VN')}`, {
-        laGiaoDichTruocKy,
-        laGiaoDichTrongKy,
-        startDate: startDate.toLocaleDateString('vi-VN'),
-        endDate: endDate.toLocaleDateString('vi-VN')
-      });
-    }
-    
-    if (laGiaoDichTruocKy || laGiaoDichTrongKy) {
       
-      function capNhatTaiKhoanTrucTiep(maTK, soTien, loaiPhatSinh, laGiaoDichTruocKy) {
-        if (!taiKhoanMap.has(maTK)) {
-          taiKhoanMap.set(maTK, {
-            ten: `Tài khoản ${maTK}`,
-            loai: maTK.length === 3 ? 1 : (maTK.length === 4 ? 2 : 3),
-            duNoDauKyGoc: 0,
-            duCoDauKyGoc: 0,
-            phatSinhNoTruocKy: 0,
-            phatSinhCoTruocKy: 0,
-            phatSinhNoTrongKy: 0,
-            phatSinhCoTrongKy: 0,
-            tinhChat: xacDinhTinhChatTaiKhoan(maTK)
-          });
-        }
-        
-        const thongTin = taiKhoanMap.get(maTK);
-        
-        if (laGiaoDichTruocKy) {
-          if (loaiPhatSinh === 'NO') {
-            thongTin.phatSinhNoTruocKy += soTien;
+      const laGiaoDichTruocKy = ngayHachToan < startDate;
+      const laGiaoDichTrongKy = ngayHachToan >= startDate && ngayHachToan <= endDate;
+      
+      if (laGiaoDichTruocKy || laGiaoDichTrongKy) {
+        const capNhatPhatSinh = (maTK, soTien, loai) => {
+          if (!taiKhoanMap.has(maTK)) {
+            taiKhoanMap.set(maTK, {
+              ten: `Tài khoản ${maTK}`, loai: maTK.length, duNoDauKyGoc: 0, duCoDauKyGoc: 0,
+              phatSinhNoTruocKy: 0, phatSinhCoTruocKy: 0, phatSinhNoTrongKy: 0, phatSinhCoTrongKy: 0,
+              tinhChat: xacDinhTinhChatTaiKhoan(maTK)
+            });
+          }
+          const tk = taiKhoanMap.get(maTK);
+          if (laGiaoDichTruocKy) {
+            if (loai === 'NO') tk.phatSinhNoTruocKy += soTien; else tk.phatSinhCoTruocKy += soTien;
           } else {
-            thongTin.phatSinhCoTruocKy += soTien;
+            if (loai === 'NO') tk.phatSinhNoTrongKy += soTien; else tk.phatSinhCoTrongKy += soTien;
           }
-        } else {
-          if (loaiPhatSinh === 'NO') {
-            thongTin.phatSinhNoTrongKy += soTien;
-          } else {
-            thongTin.phatSinhCoTrongKy += soTien;
+        };
+        
+        if (tienHang > 0) {
+          if (tkNo) capNhatPhatSinh(tkNo, tienHang, 'NO');
+          if (tkCo) capNhatPhatSinh(tkCo, tienHang, 'CO');
+        }
+        
+        if (tienVAT > 0 && tkThue) {
+          const giaoDichVAT = xuLyVAT(tkNo, tkCo, tienVAT, tkThue);
+          for (const vatGD of giaoDichVAT) {
+            if (vatGD.tkNo) capNhatPhatSinh(vatGD.tkNo, vatGD.soTien, 'NO');
+            if (vatGD.tkCo) capNhatPhatSinh(vatGD.tkCo, vatGD.soTien, 'CO');
           }
         }
       }
+    }
+    
+    const sortedByLevel = Array.from(taiKhoanMap.entries()).sort((a, b) => b[1].loai - a[1].loai || a[0].localeCompare(b[0]));
+    
+    for (const [maTK, thongTin] of sortedByLevel) {
+      const taiKhoanCha = timTaiKhoanCha(maTK, thongTin.loai);
+      for (const maCha of taiKhoanCha) {
+        if (taiKhoanMap.has(maCha)) {
+          const thongTinCha = taiKhoanMap.get(maCha);
+          thongTinCha.duNoDauKyGoc += thongTin.duNoDauKyGoc;
+          thongTinCha.duCoDauKyGoc += thongTin.duCoDauKyGoc;
+          thongTinCha.phatSinhNoTruocKy += thongTin.phatSinhNoTruocKy;
+          thongTinCha.phatSinhCoTruocKy += thongTin.phatSinhCoTruocKy;
+          thongTinCha.phatSinhNoTrongKy += thongTin.phatSinhNoTrongKy;
+          thongTinCha.phatSinhCoTrongKy += thongTin.phatSinhCoTrongKy;
+        }
+      }
+    }
+    
+    ss.toast('Đang tạo báo cáo...', 'Bước 4/4', -1);
+    
+    const outputData = [];
+    const finalSorted = Array.from(taiKhoanMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    
+    for (const [maTK, thongTin] of finalSorted) {
+      const [duNoDauKy, duCoDauKy] = tinhSoDuSauPhatSinh(thongTin.duNoDauKyGoc, thongTin.duCoDauKyGoc, thongTin.phatSinhNoTruocKy, thongTin.phatSinhCoTruocKy, thongTin.tinhChat);
+      const coPhatSinh = thongTin.phatSinhNoTrongKy !== 0 || thongTin.phatSinhCoTrongKy !== 0;
+      const coSoDu = duNoDauKy !== 0 || duCoDauKy !== 0;
+
+      if (kiemTraTaiKhoanThuocFilter(maTK) && (coPhatSinh || coSoDu)) {
+        const [duNoCuoiKy, duCoCuoiKy] = tinhSoDuSauPhatSinh(duNoDauKy, duCoDauKy, thongTin.phatSinhNoTrongKy, thongTin.phatSinhCoTrongKy, thongTin.tinhChat);
+        outputData.push([maTK, thongTin.ten, thongTin.loai, duNoDauKy, duCoDauKy, thongTin.phatSinhNoTrongKy, thongTin.phatSinhCoTrongKy, duNoCuoiKy, duCoCuoiKy]);
+      }
+    }
+    
+    const lastRow = sheetCDPS.getLastRow();
+    if (lastRow >= 4) sheetCDPS.getRange(4, 1, lastRow - 3, 10).clear();
+    
+    if (outputData.length > 0) {
+      sheetCDPS.getRange(5, 1, outputData.length, 9).setValues(outputData);
+      sheetCDPS.getRange(5, 4, outputData.length, 6).setNumberFormat('#,##0');
       
-      if (tienHang > 0) {
-        if (tkNo) {
-          capNhatTaiKhoanTrucTiep(tkNo, tienHang, 'NO', laGiaoDichTruocKy);
-        }
-        if (tkCo) {
-          capNhatTaiKhoanTrucTiep(tkCo, tienHang, 'CO', laGiaoDichTruocKy);
-        }
-        
-        if (laGiaoDichTrongKy) {
-          tongGiaoDichTrongKy++;
-          if (i < 3) console.log(`✅ Giao dịch ${i + 1} được tính vào trong kỳ`);
-        } else if (laGiaoDichTruocKy) {
-          tongGiaoDichTruocKy++;
-          if (i < 3) console.log(`⏰ Giao dịch ${i + 1} được tính vào trước kỳ`);
+      for (let i = 0; i < outputData.length; i++) {
+        if (outputData[i][2] === 1) {
+          sheetCDPS.getRange(5 + i, 1, 1, 10).setFontWeight('bold').setBackground('#E7E6E6');
         }
       }
-      
-      if (tienVAT > 0) {
-        const giaoDichVAT = xuLyVAT(tkNo, tkCo, tienVAT, tkThue);
-        
-        for (const vatGD of giaoDichVAT) {
-          if (vatGD.tkNo) {
-            capNhatTaiKhoanTrucTiep(vatGD.tkNo, vatGD.soTien, 'NO', laGiaoDichTruocKy);
-          }
-          if (vatGD.tkCo) {
-            capNhatTaiKhoanTrucTiep(vatGD.tkCo, vatGD.soTien, 'CO', laGiaoDichTruocKy);
-          }
-          tongGiaoDichVAT++;
-        }
-        
-        if (i < 3) console.log(`💰 Giao dịch ${i + 1} có VAT: ${tienVAT}`);
-      }
     }
-  }
-  
-  // BƯỚC 3: Tính tổng hợp từ tài khoản con lên cha
-  const sortedByLevel = Array.from(taiKhoanMap.entries()).sort((a, b) => {
-    if (b[1].loai !== a[1].loai) {
-      return b[1].loai - a[1].loai;
-    }
-    return a[0].localeCompare(b[0]);
-  });
-  
-  for (const [maTK, thongTin] of sortedByLevel) {
-    const taiKhoanCha = timTaiKhoanCha(maTK, thongTin.loai);
-    
-    for (const maCha of taiKhoanCha) {
-      if (taiKhoanMap.has(maCha)) {
-        const thongTinCha = taiKhoanMap.get(maCha);
-        
-        thongTinCha.duNoDauKyGoc += thongTin.duNoDauKyGoc;
-        thongTinCha.duCoDauKyGoc += thongTin.duCoDauKyGoc;
-        thongTinCha.phatSinhNoTruocKy += thongTin.phatSinhNoTruocKy;
-        thongTinCha.phatSinhCoTruocKy += thongTin.phatSinhCoTruocKy;
-        thongTinCha.phatSinhNoTrongKy += thongTin.phatSinhNoTrongKy;
-        thongTinCha.phatSinhCoTrongKy += thongTin.phatSinhCoTrongKy;
-      }
-    }
-  }
-  
-  // BƯỚC 4: Lọc tài khoản theo filter và dữ liệu
-  function kiemTraTaiKhoanCoData(thongTin) {
-    // Luôn bao gồm tài khoản có phát sinh trong kỳ báo cáo
-    if (thongTin.phatSinhNoTrongKy !== 0 || thongTin.phatSinhCoTrongKy !== 0) {
-      return true;
-    }
-    
-    // Kiểm tra số dư đầu kỳ báo cáo (bao gồm phát sinh trước kỳ)
-    const [duNoDauKyBaoCao, duCoDauKyBaoCao] = tinhSoDuSauPhatSinh(
-      thongTin.duNoDauKyGoc,
-      thongTin.duCoDauKyGoc,
-      thongTin.phatSinhNoTruocKy,
-      thongTin.phatSinhCoTruocKy,
-      thongTin.tinhChat
-    );
-    
-    return (duNoDauKyBaoCao !== 0 || duCoDauKyBaoCao !== 0);
-  }
-  
-  const taiKhoanCoData = new Map();
-  let taiKhoanTuDong = 0;
-  let taiKhoanDuocChon = 0;
-  
-  for (const [maTK, thongTin] of taiKhoanMap.entries()) {
-    const thuocFilter = kiemTraTaiKhoanThuocFilter(maTK);
-    const coData = kiemTraTaiKhoanCoData(thongTin);
-    
-    if (thuocFilter && coData) {
-      taiKhoanCoData.set(maTK, thongTin);
-      
-      // Phân loại tài khoản để thống kê
-      if (thongTin.ten.startsWith('Tài khoản ')) {
-        taiKhoanTuDong++;
-      } else {
-        taiKhoanDuocChon++;
-      }
-    }
-  }
-  
-  console.log(`📊 Thống kê tài khoản: ${taiKhoanDuocChon} được chọn, ${taiKhoanTuDong} tự động`);
-  
-  // BƯỚC 4: Tạo báo cáo và ghi dữ liệu
-  ss.toast('Đang tạo báo cáo và ghi dữ liệu...', 'Bước 4/4', -1);
-  
-  // Tạo header cho bảng CDPS
-  const headers = [
-    'Mã TK', 'Tên TK', 'Loại TK', 
-    'Dư nợ đầu kỳ', 'Dư có đầu kỳ', 
-    'Phát sinh nợ', 'Phát sinh có', 
-    'Dư nợ cuối kỳ', 'Dư có cuối kỳ'
-  ];
-  
-  // Xóa sạch toàn bộ dữ liệu cũ từ dòng 4 trở đi
-  const lastRow = sheetCDPS.getLastRow();
-  if (lastRow >= 4) {
-    sheetCDPS.getRange(4, 1, lastRow - 3, 10).clear();
-  }
-  
-  // Chuẩn bị dữ liệu để ghi
-  const outputData = [];
-  const finalSorted = Array.from(taiKhoanCoData.entries()).sort((a, b) => {
-    return a[0].localeCompare(b[0]);
-  });
-  
-  for (const [maTK, thongTin] of finalSorted) {
-    const [duNoDauKyBaoCao, duCoDauKyBaoCao] = tinhSoDuSauPhatSinh(
-      thongTin.duNoDauKyGoc,
-      thongTin.duCoDauKyGoc,
-      thongTin.phatSinhNoTruocKy,
-      thongTin.phatSinhCoTruocKy,
-      thongTin.tinhChat
-    );
-    
-    const [duNoCuoiKy, duCoCuoiKy] = tinhSoDuSauPhatSinh(
-      duNoDauKyBaoCao,
-      duCoDauKyBaoCao,
-      thongTin.phatSinhNoTrongKy,
-      thongTin.phatSinhCoTrongKy,
-      thongTin.tinhChat
-    );
-    
-    outputData.push([
-      maTK,
-      thongTin.ten,
-      thongTin.loai,
-      duNoDauKyBaoCao,
-      duCoDauKyBaoCao,
-      thongTin.phatSinhNoTrongKy,
-      thongTin.phatSinhCoTrongKy,
-      duNoCuoiKy,
-      duCoCuoiKy
-    ]);
-  }
-  
-  // Ghi dữ liệu vào sheet CDPS từ dòng 5
-  if (outputData.length > 0) {
-    sheetCDPS.getRange(5, 1, outputData.length, 9).setValues(outputData);
-    
-    const dataRange = sheetCDPS.getRange(5, 4, outputData.length, 6);
-    dataRange.setNumberFormat('#,##0');
-    
-    const headerRange = sheetCDPS.getRange(4, 1, 1, 10);
-    headerRange.setBackground('#4472C4');
-    headerRange.setFontColor('white');
-    headerRange.setFontWeight('bold');
-    headerRange.setHorizontalAlignment('center');
-    
-    const allDataRange = sheetCDPS.getRange(4, 1, outputData.length + 1, 10);
-    allDataRange.setBorder(true, true, true, true, true, true);
-    
-    for (let i = 0; i < outputData.length; i++) {
-      const loaiTK = outputData[i][2];
-      if (loaiTK === 1) {
-        const rowRange = sheetCDPS.getRange(5 + i, 1, 1, 10);
-        rowRange.setFontWeight('bold');
-        rowRange.setBackground('#E7E6E6');
-      }
-    }
-  }
-  
-  const tongTaiKhoan = Array.from(taiKhoanMap.entries()).length;
-  const taiKhoanHienThi = outputData.length;
-  const taiKhoanBoQua = tongTaiKhoan - taiKhoanHienThi;
-  
-  const filterText = isFiltered ? `\n- Filter: ${selectedAccounts.join(', ')}` : '\n- Filter: Tất cả tài khoản';
-  const sheetInfo = createDataSummary(ss, 'CDPS');
-  
-  // Debug: Thống kê cuối cùng
-  console.log(`📊 Thống kê cuối cùng:`, {
-    tongGiaoDichTruocKy,
-    tongGiaoDichTrongKy,
-    tongGiaoDichVAT,
-    startDate: startDate.toLocaleDateString('vi-VN'),
-    endDate: endDate.toLocaleDateString('vi-VN')
-  });
-  
-  ss.toast('✅ Hoàn thành!', 'Thành công', 5);
-  
-  SpreadsheetApp.getUi().alert(`✅ Báo cáo Cân đối Phát sinh đã hoàn thành!\n\n📊 Thống kê:\n- Hiển thị: ${taiKhoanHienThi} tài khoản (${taiKhoanDuocChon} được chọn, ${taiKhoanTuDong} tự động)\n- Bỏ qua: ${taiKhoanBoQua} tài khoản${filterText}\n- Giao dịch trước kỳ: ${tongGiaoDichTruocKy}\n- Giao dịch trong kỳ: ${tongGiaoDichTrongKy}\n- Xử lý VAT: ${tongGiaoDichVAT} giao dịch\n\n📋 Nguồn dữ liệu:\n${sheetInfo}\n\n📅 Kỳ báo cáo: ${startDate.toLocaleDateString('vi-VN')} → ${endDate.toLocaleDateString('vi-VN')}`);
+
+    ss.toast('✅ Hoàn thành!', 'Thành công', 5);
+    ui.alert(`✅ Báo cáo Cân đối Phát sinh đã hoàn thành cho kỳ báo cáo từ ${startDate.toLocaleDateString('vi-VN')} đến ${endDate.toLocaleDateString('vi-VN')}.`);
   
   } catch (error) {
     console.error("LỖI TẠO BÁO CÁO CDPS: " + error.toString() + error.stack);
@@ -937,14 +583,7 @@ function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
   }
 }
 
-
-//---------------------------------------------------------------------------------------------
-
-
-// Đã lược bỏ: Function taoNhapXuatTon() cũ - không còn đọc dữ liệu từ cell
-// Chức năng này đã được thay thế hoàn toàn bằng taoNhapXuatTonFromSidebar()
-
-
+//--------------------------------------------------------------------------------------------
 
 // ==================== CÁC HÀM KHÁC GIỮ NGUYÊN ====================
 
@@ -1299,30 +938,7 @@ function calculateFinalBalanceWithInternalHandling(parentAccount, childAccounts,
 /**
  * HÀM PHỤ: Tính toán phát sinh tổng hợp từ tài khoản cha và con (SỬA LẠI)
  */
-// function calculateAggregatedPhatSinh(trans, parentAccount, childAccounts) {
-//   let phatSinhNo = 0;
-//   let phatSinhCo = 0;
-  
-//   // Phát sinh từ tài khoản cha
-//   if (trans.TK_NO === parentAccount) phatSinhNo += trans.SO_TIEN;
-//   if (trans.TK_CO === parentAccount) phatSinhCo += trans.SO_TIEN;
-  
-//   // Phát sinh từ tài khoản con (CHỈ TÍNH KHI KHÔNG PHẢI GIAO DỊCH NỘI BỘ)
-//   if (childAccounts.length > 0) {
-//     const isInternalNo = isAccountInHierarchy(trans.TK_NO, parentAccount, childAccounts);
-//     const isInternalCo = isAccountInHierarchy(trans.TK_CO, parentAccount, childAccounts);
-    
-//     // Chỉ tính khi giao dịch với tài khoản bên ngoài hệ thống cha-con
-//     if (isInternalNo && !isInternalCo) {
-//       phatSinhNo += trans.SO_TIEN;
-//     }
-//     if (isInternalCo && !isInternalNo) {
-//       phatSinhCo += trans.SO_TIEN;
-//     }
-//   }
-  
-//   return [phatSinhNo, phatSinhCo];
-// }
+
 function calculateAggregatedPhatSinh(trans, parentAccount, childAccounts) {
   const accounts = [parentAccount, ...childAccounts.map(c => c.ma)];
   const isInternalNo = accounts.includes(trans.TK_NO);
@@ -1614,63 +1230,7 @@ function getReportDates() {
 /**
  * Hàm mới để lấy dữ liệu hàng hóa cho sidebar Unified
  */
-// function getHangHoaForSidebar() {
-//   try {
-//     const cache = CacheService.getScriptCache();
-//     const CACHE_KEY = 'DANH_SACH_HANG_HOA';
 
-//     const cachedData = cache.get(CACHE_KEY);
-//     if (cachedData != null) {
-//       console.log('✅ Loaded products from CACHE for Unified sidebar.');
-//       const hangHoaList = JSON.parse(cachedData);
-//       // Thêm uniqueId cho mỗi item
-//       hangHoaList.forEach(item => {
-//         item.uniqueId = `${item.maKho}|${item.maHang}`;
-//       });
-//       return hangHoaList;
-//     }
-
-//     console.log('⚠️ Cache miss. Reading products from Sheet "DMHH" for Unified sidebar.');
-//     const ss = SpreadsheetApp.getActiveSpreadsheet();
-//     const sheetDMHH = ss.getSheetByName('DMHH');
-//     if (!sheetDMHH) {
-//       throw new Error('Không tìm thấy sheet "DMHH"');
-//     }
-
-//     const data = sheetDMHH.getDataRange().getValues();
-//     const hangHoaList = [];
-//     // Bắt đầu từ dòng 2 để bỏ qua tiêu đề
-//     for (let i = 1; i < data.length; i++) {
-//       const row = data[i];
-//       const maKho = row[0]?.toString().trim();
-//       const maHang = row[1]?.toString().trim();
-//       if (maKho && maHang) { // Chỉ lấy hàng hóa có đủ mã kho và mã hàng
-//         const item = {
-//           maKho: maKho,
-//           maHang: maHang,
-//           tenHang: row[2]?.toString().trim() || '',
-//           quyCach: row[3]?.toString().trim() || '',
-//           dvt: row[4]?.toString().trim() || ''
-//         };
-//         item.uniqueId = `${maKho}|${maHang}`;
-//         hangHoaList.push(item);
-//       }
-//     }
-
-//     // Sắp xếp để dễ tìm kiếm
-//     hangHoaList.sort((a, b) => a.maKho.localeCompare(b.maKho) || a.maHang.localeCompare(b.maHang));
-
-//     // Lưu vào cache trong 15 phút
-//     cache.put(CACHE_KEY, JSON.stringify(hangHoaList), 900);
-//     console.log(`✅ Loaded and cached ${hangHoaList.length} products for Unified sidebar.`);
-
-//     return hangHoaList;
-//   } catch (e) {
-//     console.error('Error in getHangHoaForSidebar: ' + e.toString());
-//     return [];
-//   }
-// }
-// Phiên bản khắc phục của hàm getHangHoaForSidebar
 function getHangHoaForSidebar() {
   try {
     const cache = CacheService.getScriptCache();
@@ -2380,16 +1940,6 @@ function createDetailedChildReport(childAccount, transactions, ngayBatDau, ngayK
 }
 
 /**
- * HÀM PHỤ: Kiểm tra tính hợp lệ của cấu trúc phân cấp
- */
-
-
-/**
- * HÀM PHỤ: Log thống kê quá trình tổng hợp
- */
-
-
-/**
  * HÀM PHỤ: Tối ưu hóa việc xử lý giao dịch lớn
  */
 function optimizeLargeTransactionProcessing(transactions, batchSize = 500) {
@@ -2412,13 +1962,6 @@ function optimizeLargeTransactionProcessing(transactions, batchSize = 500) {
   
   return optimizedTransactions;
 }
-
-
-
-/**
- * HÀM PHỤ: Tính toán số dư động đầu kỳ chi tiết (DEBUG) - SỬA LẠI
- */
-
 
 /**
  * HÀM PHỤ: Tạo báo cáo tóm tắt quá trình xử lý
@@ -2443,11 +1986,6 @@ function createProcessingSummary(taiKhoanCanXem, childAccountsMap, processingTim
   console.log(`📈 Tổng số tài khoản con được xử lý: ${totalChildAccounts}`);
   console.log('✅ Hoàn thành xử lý!\n');
 }
-
-/**
- * HÀM PHỤ: Test logic phân cấp tài khoản (để kiểm tra không có tính trùng lặp)
- */
-
 
 /**
  * HÀM MỚI: Tạo báo cáo sổ chi tiết tài khoản với xử lý thuế từ TK_THUE
