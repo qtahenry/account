@@ -245,22 +245,6 @@ const REPORT_COLUMN_CONFIGS = {
       'SO_LUONG': 'soLuong',
       'DON_GIA': 'donGia'
     }
-  },
-    // ⭐ THAY ĐỔI: Thêm config mới cho Sổ Chi Tiết
-
-  SO_CT: {
-    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN'], // Chỉ yêu cầu các cột tối thiểu
-    mapping: {
-      'NGAY_HT': 'ngay',
-      'TK_NO': 'tkNo', 
-      'TK_CO': 'tkCo',
-      'SO_TIEN': 'soTien',
-      'THUE_VAT': 'thueVAT',
-      'TK_THUE': 'tkThue',
-      'SO_CT': 'soCt',
-      'NGAY_CT': 'ngayCt',
-      'DIEN_GIAI': 'dienGiai'
-    }
   }
 };
 // HÀM ĐỌC DỮ LIỆU UNIVERSAL
