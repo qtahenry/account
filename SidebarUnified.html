@@ -1091,6 +1091,8 @@
       }).taoCanDoiPhatSinh(startDate, endDate);
     }
 
+
+
     function createSoChiTiet() {
       if (selectedAccounts.length === 0) {
         alert('Vui lòng chọn ít nhất một tài khoản');
@@ -1138,7 +1140,7 @@
         statusElement.style.background = '#f8d7da';
         statusElement.style.borderColor = '#dc3545';
         statusElement.style.color = '#721c24';
-      }).taoSoChiTietTaiKhoan_V2(startDate, endDate, selectedAccounts);
+      }).taosochitiet(startDate, endDate, selectedAccounts);
     }
 
     function saveReportDates(startDate, endDate) {
