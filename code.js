@@ -1,2233 +1,995 @@
-function onOpen() {
-  const ui = SpreadsheetApp.getUi();
-  const menu = ui.createMenu('⚡ Kế toán Pro');
-  
-  // Đã lược bỏ: menu.addItem('📦 Tạo Nhập Xuất Tồn', 'taoNhapXuatTon');
-  menu.addItem('🚀 Bảng Điều Khiển Tổng Hợp', 'moSidebarUnified');
-  menu.addSeparator();
-  
-  // Menu con đầy đủ cho chức năng Tính giá xuất kho
-  const tinhGiaMenu = ui.createMenu('⚙️ Tính giá Xuất kho');
-  tinhGiaMenu.addItem('Bình quân Gia quyền Theo Tháng', 'runBQGQ_Thang');
-  tinhGiaMenu.addItem('Bình quân Di động', 'runBQDD');
-  tinhGiaMenu.addItem('Nhập trước, Xuất trước (FIFO)', 'runFIFO');
-  tinhGiaMenu.addItem('Nhập sau, Xuất trước (LIFO)', 'runLIFO');
-  
-  menu.addSubMenu(tinhGiaMenu);
-  menu.addSeparator();
-  
-  // Ghi chú: Chức năng hàng hóa đã được tích hợp vào Bảng Điều Khiển Tổng Hợp
-  // menu.addItem('📦 Chọn Hàng hóa', 'moSidebarHangHoa');
-  
-  menu.addToUi();
-}
-
-// Các hàm nhỏ để gọi hàm chính với đúng tham số
-function runBQGQ_Thang() {
-  tinhGiaXuatKho('BQGQ_THANG');
-}
-function runBQDD() {
-  tinhGiaXuatKho('BQDD');
-}
-function runFIFO() {
-  tinhGiaXuatKho('FIFO');
-}
-function runLIFO() {
-  tinhGiaXuatKho('LIFO');
-}
-
-/**
- * HÀM PHỤ: Tạo Map lookup thông tin hàng hóa từ sheet DMHH
- * Sử dụng cache để tăng hiệu suất
- */
-function getHangHoaLookupMap() {
-  try {
-    const cache = CacheService.getScriptCache();
-    const CACHE_KEY = 'HANGHOA_LOOKUP_MAP';
-    
-    // Kiểm tra cache trước
-    const cachedData = cache.get(CACHE_KEY);
-    if (cachedData != null) {
-      console.log('✅ Loaded hangHoaMap from CACHE');
-      return new Map(JSON.parse(cachedData));
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body {
+      font-family: 'Google Sans', Arial, sans-serif;
+      margin: 0;
+      padding: 15px;
+      background-color: #f8f9fa;
     }
     
-    // Cache miss - đọc từ sheet DMHH
-    console.log('⚠️ Cache miss. Reading products from Sheet "DMHH" for auto-fill...');
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheetDMHH = ss.getSheetByName('DMHH');
-    
-    if (!sheetDMHH) {
-      throw new Error('Không tìm thấy sheet "DMHH"');
+    .tab-container {
+      display: flex;
+      margin-bottom: 15px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      overflow: hidden;
     }
     
-    const data = sheetDMHH.getDataRange().getValues();
-    const hangHoaMap = new Map();
+    .tab {
+      flex: 1;
+      padding: 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      background: transparent;
+      font-size: 13px;
+      font-weight: 500;
+    }
     
-    // Bắt đầu từ dòng 2 để bỏ qua tiêu đề
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      const maKho = row[0]?.toString().trim();
-      const maHang = row[1]?.toString().trim();
-      
-      if (maKho && maHang) { // Chỉ lấy hàng hóa có đủ mã kho và mã hàng
-        const key = `${maKho}|${maHang}`;
-        hangHoaMap.set(key, {
-          tenHang: row[2]?.toString().trim() || '',
-          quyCach: row[3]?.toString().trim() || '',
-          dvt: row[4]?.toString().trim() || ''
-        });
+    .tab.active {
+      background-color: #4285f4;
+      color: white;
+    }
+    
+    .tab:hover:not(.active) {
+      background-color: #f1f3f4;
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    .section {
+      margin-bottom: 12px;
+    }
+    
+    .section-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #5f6368;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .date-inputs {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .date-inputs div {
+      flex: 1;
+    }
+    
+    input[type="date"], input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    
+    .search-box {
+      position: relative;
+      margin-bottom: 15px;
+    }
+    
+    .search-input {
+      width: 100%;
+      padding: 10px 40px 10px 15px;
+      border: 2px solid #dadce0;
+      border-radius: 25px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+      box-sizing: border-box;
+    }
+    
+    .search-input:focus {
+      border-color: #4285f4;
+    }
+    
+    .search-icon {
+      position: absolute;
+      right: 15px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #5f6368;
+    }
+    
+    .clear-search {
+      position: absolute;
+      right: 40px;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      color: #5f6368;
+      display: none;
+    }
+    
+    .select-all-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    
+    .btn-small {
+      padding: 6px 12px;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      background: white;
+      color: #5f6368;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+    
+    .btn-small:hover {
+      background-color: #f1f3f4;
+      border-color: #4285f4;
+    }
+    
+    .account-list {
+      max-height: 245px;
+      overflow-y: auto;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      border: 1px solid #dadce0;
+    }
+    
+    .account-item {
+      display: flex;
+      align-items: flex-start;
+      padding: 10px 12px;
+      border-bottom: 1px solid #f0f0f0;
+      transition: background-color 0.15s;
+    }
+    
+    .account-item:last-child {
+      border-bottom: none;
+    }
+    
+    .account-item:hover {
+      background-color: #f1f3f4;
+    }
+    
+    input[type="checkbox"] {
+      margin-right: 12px;
+      margin-top: 4px;
+      transform: scale(1.1);
+      accent-color: #4285f4;
+    }
+    
+    .account-info {
+      flex: 1;
+    }
+    
+    .account-code {
+      font-weight: 500;
+      color: #202124;
+      margin-bottom: 2px;
+    }
+    
+    .account-name {
+      font-size: 11px;
+      color: #5f6368;
+    }
+    
+    .status {
+      text-align: center;
+      font-size: 11px;
+      color: #5f6368;
+      margin: 15px 0;
+      padding: 10px;
+      background: white;
+      border-radius: 6px;
+      border: 1px solid #e8eaed;
+    }
+    
+    .actions {
+      margin-top: 15px;
+      display: flex;
+      gap: 10px;
+    }
+    
+    .btn {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 500;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      min-width: 0;
+    }
+    
+    .btn-primary {
+      background-color: #4285f4;
+      color: white;
+    }
+    
+    .btn-primary:hover:not(:disabled) {
+      background-color: #3367d6;
+    }
+    
+    .btn-secondary {
+      background-color: #34a853;
+      color: white;
+    }
+    
+    .btn-secondary:hover:not(:disabled) {
+      background-color: #2d8e47;
+    }
+    
+    .btn:disabled {
+      background-color: #e0e0e0;
+      cursor: not-allowed;
+    }
+    
+    .skeleton {
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 200% 100%;
+      animation: loading 1.5s infinite;
+    }
+    
+    @keyframes loading {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+    
+    .skeleton-item {
+      height: 60px;
+      margin-bottom: 5px;
+      border-radius: 6px;
+    }
+    
+    .info-box {
+      background: #e8f0fe;
+      border: 1px solid #4285f4;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 15px;
+      font-size: 12px;
+      color: #1a73e8;
+    }
+
+    /* CSS cho tab hàng hóa */
+    .hanghoa-list {
+      max-height: 300px;
+      overflow-y: auto;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      border: 1px solid #dadce0;
+    }
+
+    .hanghoa-item {
+      display: flex;
+      align-items: flex-start;
+      padding: 10px 12px;
+      border-bottom: 1px solid #f0f0f0;
+      transition: background-color 0.15s;
+    }
+
+    .hanghoa-item:last-child {
+      border-bottom: none;
+    }
+
+    .hanghoa-item:hover {
+      background-color: #e6f4ea;
+    }
+
+    .hanghoa-item input[type="checkbox"] {
+      margin-right: 12px;
+      margin-top: 4px;
+      transform: scale(1.1);
+      accent-color: #34a853;
+    }
+
+    .hanghoa-info {
+      flex: 1;
+    }
+
+    .hanghoa-name {
+      font-weight: 500;
+      color: #202124;
+      margin-bottom: 2px;
+    }
+
+    .hanghoa-code {
+      font-size: 11px;
+      color: #5f6368;
+      margin-bottom: 2px;
+    }
+
+    .hanghoa-code .ma-kho {
+      background: #e8f0fe;
+      color: #1a73e8;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+      margin-right: 5px;
+    }
+
+    .hanghoa-details {
+      font-size: 10px;
+      color: #80868b;
+    }
+
+    /* CSS cho bộ lọc đơn giản */
+    .filter-simple {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 15px;
+    }
+
+    .filter-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 12px;
+      gap: 10px;
+    }
+
+    .filter-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .filter-checkbox {
+      display: flex;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 500;
+      color: #5f6368;
+      cursor: pointer;
+      min-width: 10px;
+    }
+
+    .filter-checkbox input[type="checkbox"] {
+      margin-right: 8px;
+      transform: scale(1.1);
+      accent-color: #4285f4;
+    }
+
+    .filter-row select {
+      font-size: 12px;
+      background: white;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      padding: 6px 8px;
+      min-width: 150px;
+      flex: 1;
+    }
+
+    .filter-row select:disabled {
+      background: #f1f3f4;
+      color: #80868b;
+      cursor: not-allowed;
+    }
+
+    .filter-actions {
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    /* CSS cho toggle switch nhỏ gọn */
+    .mode-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 15px;
+      gap: 10px;
+    }
+
+    .mode-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: #5f6368;
+    }
+
+    .toggle-switch {
+      position: relative;
+      width: 50px;
+      height: 24px;
+      background: #dadce0;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .toggle-switch.active {
+      background: #4285f4;
+    }
+
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 20px;
+      height: 20px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.3s;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .toggle-switch.active::after {
+      transform: translateX(26px);
+    }
+
+    /* CSS cho chế độ ghi dữ liệu */
+    .write-mode .account-item {
+      cursor: pointer;
+    }
+
+    .write-mode .account-item:hover {
+      background-color: #e6f4ea;
+    }
+
+    .write-mode .account-item input[type="checkbox"] {
+      accent-color: #34a853;
+    }
+  </style>
+</head>
+<body>
+
+
+  <div class="tab-container">
+    <button class="tab active" onclick="switchTab('main')">📊 Báo Cáo Kế Toán</button>
+    <button class="tab" onclick="switchTab('hanghoa')">📦 Báo Cáo Kho</button>
+  </div>
+
+  <!-- TAB BÁO CÁO KẾ TOÁN -->
+  <div id="main" class="tab-content active">
+    <!-- Toggle switch cho 2 chế độ -->
+    <div class="mode-toggle">
+      <span class="mode-label">📊 Báo Cáo</span>
+      <div class="toggle-switch" onclick="toggleMode()" id="modeToggle"></div>
+      <span class="mode-label">✏️ Ghi định khoản</span>
+    </div>
+
+    <!-- CHẾ ĐỘ BÁO CÁO -->
+    <div id="reportMode" class="mode-content">
+      <div class="section">
+        <div class="search-box">
+          <input type="text" id="searchInput" class="search-input" placeholder="🔍 Tìm theo mã hoặc tên tài khoản..." oninput="filterAccounts()">
+          <span class="search-icon">🔍</span>
+          <span class="clear-search" onclick="clearSearch()" title="Xóa tìm kiếm">✕</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">📋 Danh Sách Tài Khoản</div>
+        <div class="select-all-controls">
+          <button class="btn-small" onclick="selectAllAccounts()">✅ Chọn Tất Cả</button>
+          <button class="btn-small" onclick="deselectAllAccounts()">❌ Bỏ Chọn Tất Cả</button>
+        </div>
+        <div class="account-list" id="accountList">
+          <div id="loading" style="padding: 20px; text-align: center; color: #5f6368;">Đang tải danh sách...</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">📅 Kỳ Báo Cáo</div>
+        <div class="date-inputs">
+          <div>
+            <label for="startDate">Từ ngày</label>
+            <input type="date" id="startDate">
+          </div>
+          <div>
+            <label for="endDate">Đến ngày</label>
+            <input type="date" id="endDate">
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">📊 Loại Báo Cáo</div>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="createCDPS()">📊 Cân Đối Phát Sinh</button>
+          <button class="btn btn-secondary" onclick="createSoChiTiet()">📖 Sổ Chi Tiết</button>
+        </div>
+      </div>
+
+      <div class="status" id="status">Đã chọn: 0 tài khoản</div>
+    </div>
+
+    <!-- CHẾ ĐỘ GHI DỮ LIỆU -->
+    <div id="writeMode" class="mode-content" style="display: none;">
+      <div class="info-box">
+        💡 <strong>Hướng dẫn:</strong> Chọn tài khoản từ danh sách bên dưới để ghi vào ô đang được chọn trong sheet
+      </div>
+
+      <div class="section">
+        <div class="search-box">
+          <input type="text" id="writeSearchInput" class="search-input" placeholder="🔍 Tìm nhanh tài khoản..." oninput="filterWriteAccounts()">
+          <span class="search-icon">🔍</span>
+          <span class="clear-search" onclick="clearWriteSearch()" title="Xóa tìm kiếm">✕</span>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">💼 Tất Cả Tài Khoản</div>
+        <div class="select-all-controls">
+          <button class="btn-small" onclick="selectAllWriteAccounts()">✅ Chọn Tất Cả</button>
+          <button class="btn-small" onclick="deselectAllWriteAccounts()">❌ Bỏ Chọn Tất Cả</button>
+        </div>
+        <div class="account-list write-mode" id="writeAccountList">
+          <div id="loadingWrite" style="padding: 20px; text-align: center; color: #5f6368;">Đang tải danh sách...</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">🎯 Thao Tác</div>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="writeSelectedAccounts()">✅ Ghi dữ liệu</button>
+        </div>
+      </div>
+
+      <div class="status" id="writeStatus" style="display:none;">Đã chọn: 0 tài khoản</div>
+    </div>
+  </div>
+
+
+
+  <!-- TAB BÁO CÁO KHO -->
+  <div id="hanghoa" class="tab-content">
+
+    <div class="section">
+      <div class="search-box">
+        <input type="text" id="hanghoaSearchInput" class="search-input" placeholder="🔍 Tìm theo mã kho, mã hàng, tên hàng..." oninput="filterHangHoa();">
+        <span class="clear-search" id="clearHangHoaSearch" onclick="clearHangHoaSearch()" title="Xóa tìm kiếm">✕</span>
+      </div>     
+    </div>
+
+    <div class="section">
+      <div class="section-title">📦 Danh Sách Hàng Hóa</div>
+      <div class="select-all-controls">
+        <button class="btn-small" onclick="selectAllHangHoa()">✅ Chọn Tất Cả</button>
+        <button class="btn-small" onclick="deselectAllHangHoa()">❌ Bỏ Chọn Tất Cả</button>
+      </div>
+      <div class="hanghoa-list" id="hanghoaList">
+        <div id="loadingHangHoa" style="padding: 20px; text-align: center; color: #5f6368;">Đang tải danh sách hàng hóa...</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">📅 Kỳ Báo Cáo</div>
+      <div class="date-inputs">
+        <div>
+          <label for="hanghoaStartDate">Từ ngày</label>
+          <input type="date" id="hanghoaStartDate">
+        </div>
+        <div>
+          <label for="hanghoaEndDate">Đến ngày</label>
+          <input type="date" id="hanghoaEndDate">
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">🎯 Ghi Dữ Liệu</div>
+       <div class="actions">
+        <button class="btn btn-primary" id="applyHangHoaBtn" onclick="applyHangHoaSelection()">✅ Ghi dữ liệu vào sheet</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">📊 Báo Cáo Nhập Xuất Tồn</div>
+      <div class="actions" style="flex-direction: column;">
+        <button class="btn btn-secondary" onclick="createNhapXuatTon('ALL')">📊 NXT (Số lượng & Giá trị)</button>
+        <button class="btn btn-secondary" style="background-color: #fbbc05;" onclick="createNhapXuatTon('SL')">#️⃣ NXT (Chỉ Số Lượng)</button>
+        <button class="btn btn-secondary" style="background-color: #ea4335;" onclick="createNhapXuatTon('GT')">💲 NXT (Chỉ Giá Trị)</button>
+      </div>
+    </div>
+
+
+    <div class="status" id="hanghoaStatus" style="display:none;">Đã chọn: 0 hàng hóa</div>
+  </div>
+
+  <script>
+    let allAccounts = [];
+    let selectedAccounts = [];
+    let currentTab = 'main';
+    let currentMode = 'report'; // 'report' hoặc 'write'
+    
+    let allHangHoa = [];
+    let selectedHangHoaIds = new Set();
+    
+    let selectedWriteAccounts = [];
+
+    function switchTab(tabName) {
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById(tabName).classList.add('active');
+      event.target.classList.add('active');
+      currentTab = tabName;
+      if (tabName === 'main') updateStatus();
+    }
+
+    function toggleMode() {
+      const toggleSwitch = document.getElementById('modeToggle');
+      const reportMode = document.getElementById('reportMode');
+      const writeMode = document.getElementById('writeMode');
+      if (currentMode === 'report') {
+        toggleSwitch.classList.add('active');
+        reportMode.style.display = 'none';
+        writeMode.style.display = 'block';
+        currentMode = 'write';
+        updateWriteStatus();
+      } else {
+        toggleSwitch.classList.remove('active');
+        reportMode.style.display = 'block';
+        writeMode.style.display = 'none';
+        currentMode = 'report';
+        updateStatus();
       }
     }
-    
-    // Lưu vào cache trong 15 phút (900 giây)
-    const mapArray = Array.from(hangHoaMap.entries());
-    cache.put(CACHE_KEY, JSON.stringify(mapArray), 300);
-    
-    console.log(`✅ Loaded and cached ${hangHoaMap.size} products for auto-fill.`);
-    return hangHoaMap;
-    
-  } catch (e) {
-    console.error('❌ Error in getHangHoaLookupMap: ' + e.toString());
-    return new Map(); // Trả về Map rỗng nếu có lỗi
-  }
-}
 
-function onEdit(e) {
-  try {
-    const range = e.range;
-    const sheet = range.getSheet();
-    const sheetName = sheet.getName();
-    const startRow = range.getRow();
-    const startCol = range.getColumn();
-    const numRows = range.getNumRows();
-
-    // --- TÁC VỤ 1: Tự động chạy báo cáo Cân đối phát sinh ---
-    if (sheetName === 'CDPS' && numRows === 1 && ( (startRow === 1 && startCol === 12) || (startRow === 2 && startCol === 12) )) {
-      SpreadsheetApp.getActiveSpreadsheet().toast('Đang tính toán lại Cân đối phát sinh...');
-      Utilities.sleep(1000);
-      taoCanDoiPhatSinh();
-      return;
+    function loadAccounts() {
+      google.script.run.withSuccessHandler(accounts => {
+        allAccounts = accounts;
+        renderAccountList(allAccounts);
+        updateStatus();
+      }).withFailureHandler(err => {
+        document.getElementById('loading').textContent = 'Lỗi tải dữ liệu.';
+      }).getAccountsForSidebar();
     }
 
-    // --- TÁC VỤ 2: Tự động điền thông tin hàng hóa (Nâng cấp) ---
-    // Chỉ xử lý các sheet có tên bắt đầu bằng DL_
-    if (!sheetName.startsWith('DL_') || startRow <= 1) return;
-
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // Lấy header row để tìm vị trí các cột cần thiết
-    const headerRow = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const cleanHeaders = headerRow.map(h => h.toString().trim().toUpperCase());
-    
-    // Tìm vị trí các cột cần thiết
-    const colIndexMaKho = cleanHeaders.indexOf('MA_KHO');
-    const colIndexMaHang = cleanHeaders.indexOf('MA_HANG');
-    const colIndexTenHang = cleanHeaders.indexOf('TEN_HANG');
-    const colIndexQuyCach = cleanHeaders.indexOf('QUY_CACH');
-    const colIndexDVT = cleanHeaders.indexOf('DVT');
-
-    // Kiểm tra xem có đủ các cột cần thiết không
-    if (colIndexMaKho === -1 || colIndexMaHang === -1) {
-      console.log(`⚠️ Sheet ${sheetName} không có cột MA_KHO hoặc MA_HANG`);
-      return;
+    function loadAllAccounts() {
+      google.script.run.withSuccessHandler(accounts => {
+        renderWriteAccountsList(accounts);
+      }).withFailureHandler(err => {
+        document.getElementById('loadingWrite').textContent = 'Lỗi tải dữ liệu.';
+      }).getAccountsForSidebar();
     }
 
-    // Kiểm tra xem có ít nhất một cột để điền không
-    if (colIndexTenHang === -1 && colIndexQuyCach === -1 && colIndexDVT === -1) {
-      console.log(`⚠️ Sheet ${sheetName} không có cột nào để điền (TEN_HANG, QUY_CACH, DVT)`);
-      return;
-    }
-
-    // Kiểm tra xem vùng được chỉnh sửa có liên quan đến cột MA_KHO hoặc MA_HANG không
-    const endCol = startCol + range.getNumColumns() - 1;
-    const isRelevantColumnEdited = (endCol >= colIndexMaKho + 1 && startCol <= colIndexMaKho + 1) || 
-                                   (endCol >= colIndexMaHang + 1 && startCol <= colIndexMaHang + 1);
-
-    // Nếu không có sự thay đổi nào ở 2 cột này -> thoát hàm
-    if (!isRelevantColumnEdited) {
-      return;
-    }
-
-    // Thông báo đang xử lý
-    ss.toast(`Đang xử lý ${numRows} dòng...`, 'Tự động điền thông tin hàng hóa', 5);
-    
-    // Lấy Map thông tin hàng hóa
-    const hangHoaMap = getHangHoaLookupMap();
-    if (hangHoaMap.size === 0) {
-      ss.toast('Không thể đọc dữ liệu từ sheet DMHH', 'Lỗi', 10);
-      return;
-    }
-
-    // Lấy dữ liệu từ vùng được chỉnh sửa
-    const dataRange = sheet.getRange(startRow, 1, numRows, sheet.getLastColumn()).getValues();
-    
-    // Chuẩn bị dữ liệu để điền
-    const tenHangValues = [];
-    const quyCachValues = [];
-    const dvtValues = [];
-    let filledCount = 0;
-
-    // Xử lý từng dòng
-    for (let i = 0; i < numRows; i++) {
-      const currentRow = dataRange[i];
-      const maKho = currentRow[colIndexMaKho]?.toString().trim();
-      const maHang = currentRow[colIndexMaHang]?.toString().trim();
-
-      if (maKho && maHang) {
-        const key = `${maKho}|${maHang}`;
-        if (hangHoaMap.has(key)) {
-          const itemInfo = hangHoaMap.get(key);
-          tenHangValues.push([itemInfo.tenHang]);
-          quyCachValues.push([itemInfo.quyCach]);
-          dvtValues.push([itemInfo.dvt]);
-          filledCount++;
-          console.log(`✅ Tìm thấy: ${maKho} - ${maHang} → ${itemInfo.tenHang}`);
+    function loadReportDates() {
+      google.script.run.withSuccessHandler(dates => {
+        if (dates && dates.startDate && dates.endDate) {
+          document.getElementById('startDate').value = dates.startDate;
+          document.getElementById('endDate').value = dates.endDate;
+          document.getElementById('hanghoaStartDate').value = dates.startDate;
+          document.getElementById('hanghoaEndDate').value = dates.endDate;
         } else {
-          tenHangValues.push(['']);
-          quyCachValues.push(['']);
-          dvtValues.push(['']);
-          console.log(`⚠️ Không tìm thấy: ${maKho} - ${maHang}`);
+          const today = new Date();
+          const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+          const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+          document.getElementById('startDate').valueAsDate = firstDay;
+          document.getElementById('endDate').valueAsDate = lastDay;
+          document.getElementById('hanghoaStartDate').valueAsDate = firstDay;
+          document.getElementById('hanghoaEndDate').valueAsDate = lastDay;
         }
-      } else {
-        tenHangValues.push(['']);
-        quyCachValues.push(['']);
-        dvtValues.push(['']);
-      }
+      }).withFailureHandler(err => {
+        const today = new Date();
+        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        document.getElementById('startDate').valueAsDate = firstDay;
+        document.getElementById('endDate').valueAsDate = lastDay;
+        document.getElementById('hanghoaStartDate').valueAsDate = firstDay;
+        document.getElementById('hanghoaEndDate').valueAsDate = lastDay;
+      }).getReportDates();
     }
 
-    // Điền dữ liệu vào các cột tương ứng
-    if (colIndexTenHang > -1 && tenHangValues.length > 0) {
-      sheet.getRange(startRow, colIndexTenHang + 1, numRows, 1).setValues(tenHangValues);
-    }
-    if (colIndexQuyCach > -1 && quyCachValues.length > 0) {
-      sheet.getRange(startRow, colIndexQuyCach + 1, numRows, 1).setValues(quyCachValues);
-    }
-    if (colIndexDVT > -1 && dvtValues.length > 0) {
-      sheet.getRange(startRow, colIndexDVT + 1, numRows, 1).setValues(dvtValues);
-    }
-
-    // Thông báo hoàn thành
-    const message = `✅ Đã tự động điền ${filledCount}/${numRows} dòng từ sheet DMHH`;
-    ss.toast(message, 'Hoàn thành!', 5);
-    console.log(message);
-
-  } catch (error) {
-    console.error('❌ LỖI TRONG HÀM ONEDIT: ' + error.toString());
-    SpreadsheetApp.getActiveSpreadsheet().toast('Gặp lỗi khi tự động điền, vui lòng xem Logs.', 'Lỗi Script', 10);
-  }
-}
-
-// ==================== UNIVERSAL DATA READER ====================
-
-const REPORT_COLUMN_CONFIGS = {
-  CDPS: {
-    // ⭐ THAY ĐỔI 1: Đã xóa 'TK_THUE' khỏi danh sách cột bắt buộc
-    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'THUE_VAT'],
-    mapping: {
-      'NGAY_HT': 'ngay',
-      'TK_NO': 'tkNo', 
-      'TK_CO': 'tkCo',
-      'SO_TIEN': 'soTien',
-      'THUE_VAT': 'thueVAT',
-      'TK_THUE': 'tkThue' // Vẫn giữ mapping để đọc dữ liệu nếu cột tồn tại
-    }
-  },
-  NXT: {
-    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'MA_KHO', 'MA_HANG', 'SO_LUONG', 'DON_GIA'],
-    mapping: {
-      'NGAY_HT': 'ngay',
-      'TK_NO': 'tkNo', 
-      'TK_CO': 'tkCo',
-      'SO_TIEN': 'soTien',
-      'MA_KHO': 'maKho',
-      'MA_HANG': 'maHang',
-      'SO_LUONG': 'soLuong',
-      'DON_GIA': 'donGia'
-    }
-  },
-    // ⭐ THAY ĐỔI: Thêm config mới cho Sổ Chi Tiết
-
-  SO_CT: {
-    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN'], // Chỉ yêu cầu các cột tối thiểu
-    mapping: {
-      'NGAY_HT': 'ngay',
-      'TK_NO': 'tkNo', 
-      'TK_CO': 'tkCo',
-      'SO_TIEN': 'soTien',
-      'THUE_VAT': 'thueVAT',
-      'TK_THUE': 'tkThue',
-      'SO_CT': 'soCt',
-      'NGAY_CT': 'ngayCt',
-      'DIEN_GIAI': 'dienGiai'
-    }
-  }
-};
-// HÀM ĐỌC DỮ LIỆU UNIVERSAL
-function getAllDataFromDLSheets(spreadsheet, reportType, filterCondition = null) {
-  const config = REPORT_COLUMN_CONFIGS[reportType];
-  if (!config) throw new Error(`Không tìm thấy config cho loại báo cáo: ${reportType}`);
-  
-  const dataSheets = spreadsheet.getSheets().filter(sheet => sheet.getName().startsWith('DL_'));
-  if (dataSheets.length === 0) throw new Error('Không tìm thấy sheet nào bắt đầu với "DL_"');
-  
-  const combinedData = [];
-  const processSummary = {
-    totalSheets: dataSheets.length,
-    validSheets: 0,
-    totalRows: 0,
-    errors: []
-  };
-  
-  for (const sheet of dataSheets) {
-    try {
-      const sheetData = processUniversalDataSheet(sheet, config, filterCondition);
-      if (sheetData.length > 0) {
-        combinedData.push(...sheetData);
-        processSummary.totalRows += sheetData.length;
-        processSummary.validSheets++;
-      }
-    } catch (error) {
-      processSummary.errors.push(`${sheet.getName()}: ${error.message}`);
-      console.log(`⚠️ Lỗi sheet "${sheet.getName()}": ${error.message}`);
-    }
-  }
-  
-  console.log(`📊 Tổng kết ${reportType}: ${processSummary.validSheets}/${processSummary.totalSheets} sheets, ${processSummary.totalRows} dòng`);
-  return { data: combinedData, summary: processSummary };
-}
-// HÀM XỬ LÝ UNIVERSAL CHO MỘT SHEET
-function processUniversalDataSheet(sheet, config, filterCondition) {
-  const data = sheet.getDataRange().getValues();
-  if (data.length <= 1) return [];
-  
-  const headerRow = data[0];
-  const columnMap = mapUniversalColumns(headerRow, config, sheet.getName());
-  if (!columnMap.isValid) throw new Error(`Thiếu cột: ${columnMap.missingColumns.join(', ')}`);
-  
-  const processedData = [];
-  
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const processedRow = { sheet: sheet.getName(), row: i + 1 };
-    
-    let hasValidData = false;
-    for (const [headerName, propName] of Object.entries(config.mapping)) {
-      const colIndex = columnMap[propName];
-      let value = (colIndex !== undefined) ? row[colIndex] : undefined;
-      
-      if (['soTien', 'thueVAT', 'soLuong', 'donGia'].includes(propName)) {
-        value = parseFloat(value) || 0;
-      } else if (propName === 'ngay') {
-        if (!value) continue;
-        hasValidData = true;
-      } else {
-        value = value?.toString().trim() || '';
-      }
-      
-      processedRow[propName] = value;
-      if (propName !== 'ngay' && value) hasValidData = true;
-    }
-    
-    if (!hasValidData) continue;
-    if (filterCondition && !filterCondition(processedRow)) continue;
-    
-    processedData.push(processedRow);
-  }
-  
-  return processedData;
-}
-// HÀM MAP CỘT UNIVERSAL
-function mapUniversalColumns(headerRow, config, sheetName) {
-  const columnMap = {};
-  const missingColumns = [];
-  
-  const headerMap = {};
-  headerRow.forEach((h, i) => {
-    const headerName = h?.toString().trim().toUpperCase();
-    if (headerName) headerMap[headerName] = i;
-  });
-  
-  for (const [headerName, propName] of Object.entries(config.mapping)) {
-    if (headerMap.hasOwnProperty(headerName)) {
-      columnMap[propName] = headerMap[headerName];
-    } else if (config.required.includes(headerName)) {
-      missingColumns.push(headerName);
-    }
-  }
-  
-  return { ...columnMap, isValid: missingColumns.length === 0, missingColumns };
-}
-// HÀM TẠO SUMMARY UNIVERSAL
-function createDataSummary(spreadsheet, reportType) {
-  const dataSheets = spreadsheet.getSheets().filter(sheet => sheet.getName().startsWith('DL_'));
-  const config = REPORT_COLUMN_CONFIGS[reportType];
-  
-  let summary = `- Tìm thấy ${dataSheets.length} sheet dữ liệu:\n`;
-  let totalRows = 0;
-  let validSheets = 0;
-  
-  for (const sheet of dataSheets) {
-    try {
-      const data = sheet.getDataRange().getValues();
-      const rowCount = data.length - 1;
-      
-      if (rowCount > 0) {
-        const headerRow = data[0];
-        const columnMap = mapUniversalColumns(headerRow, config, sheet.getName());
-        
-        if (columnMap.isValid) {
-          summary += `  ✅ ${sheet.getName()}: ${rowCount} dòng\n`;
-          totalRows += rowCount;
-          validSheets++;
+    function loadHangHoa() {
+      const loadingElement = document.getElementById('loadingHangHoa');
+      if (loadingElement) loadingElement.style.display = 'block';
+      google.script.run.withSuccessHandler(hangHoa => {
+        if (Array.isArray(hangHoa)) {
+          allHangHoa = hangHoa;
+          renderHangHoaList(allHangHoa);
         } else {
-          summary += `  ❌ ${sheet.getName()}: Thiếu cột ${columnMap.missingColumns.join(', ')}\n`;
+          document.getElementById('hanghoaList').innerHTML = '<div style="padding: 20px; text-align: center; color: #5f6368;">Không có dữ liệu hàng hóa.</div>';
         }
-      } else {
-        summary += `  ⚠️ ${sheet.getName()}: Trống\n`;
-      }
-    } catch (error) {
-      summary += `  ❌ ${sheet.getName()}: Lỗi ${error.message}\n`;
-    }
-  }
-  
-  summary += `- Tổng: ${validSheets}/${dataSheets.length} sheet hợp lệ, ${totalRows} dòng dữ liệu`;
-  return summary;
-}
-
-// ==================== HÀM BÁO CÁO CHÍNH ====================
-
-function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
-  
-  try {
-    const sheetDMTK = ss.getSheetByName('DMTK');
-    const sheetCDPS = ss.getSheetByName('CDPS');
-    if (!sheetDMTK || !sheetCDPS) throw new Error('Không tìm thấy sheet DMTK hoặc CDPS');
-    
-    let startDate, endDate;
-    if (ngayBatDau && ngayKetThuc) {
-      startDate = new Date(ngayBatDau);
-      endDate = new Date(ngayKetThuc);
-    } else {
-      startDate = new Date(ss.getRangeByName('NgayBatDau_CDPS').getValue());
-      endDate = new Date(ss.getRangeByName('NgayKetThuc_CDPS').getValue());
-    }
-    if (!startDate || !endDate) throw new Error('Vui lòng nhập ngày bắt đầu và ngày kết thúc');
-    
-    const selectedAccounts = getSelectedAccounts();
-    const isFiltered = selectedAccounts.length > 0;
-    
-    ss.toast('Đang đọc dữ liệu...', 'Bước 1/4', -1);
-    const dataResult = getAllDataFromDLSheets(ss, 'CDPS');
-    const combinedData = dataResult.data;
-    
-    const taiKhoanMap = new Map();
-    
-    function xacDinhTinhChatTaiKhoan(maTK) {
-      const kyTuDau = maTK.toString().charAt(0);
-      if (['1', '2', '6', '8'].includes(kyTuDau)) return 'TAI_SAN_CHI_PHI';
-      if (['3', '4', '5', '7'].includes(kyTuDau)) return 'NO_VON_DOANH_THU';
-      return 'KHAC';
-    }
-    
-    function tinhSoDuSauPhatSinh(duNoDauKy, duCoDauKy, phatSinhNo, phatSinhCo, tinhChatTK) {
-      let soDuNoCuoi = 0, soDuCoCuoi = 0;
-      if (tinhChatTK === 'TAI_SAN_CHI_PHI') {
-        const soDuThuan = (duNoDauKy + phatSinhNo) - (duCoDauKy + phatSinhCo);
-        if (soDuThuan >= 0) soDuNoCuoi = soDuThuan;
-        else soDuCoCuoi = Math.abs(soDuThuan);
-      } else { // NO_VON_DOANH_THU và KHAC
-        const soDuThuan = (duCoDauKy + phatSinhCo) - (duNoDauKy + phatSinhNo);
-        if (soDuThuan >= 0) soDuCoCuoi = soDuThuan;
-        else soDuNoCuoi = Math.abs(soDuThuan);
-      }
-      return [soDuNoCuoi, soDuCoCuoi];
-    }
-    
-    function xuLyVAT(tkNo, tkCo, tienVAT, tkThue) {
-      if (!tienVAT || tienVAT <= 0 || !tkThue) return [];
-      const tkThueStr = tkThue.toString().trim();
-      if (['1331', '1332'].includes(tkThueStr)) return [{ tkNo: tkThueStr, tkCo, soTien: tienVAT }];
-      if (['33311', '33312'].includes(tkThueStr)) return [{ tkNo, tkCo: tkThueStr, soTien: tienVAT }];
-      return [];
-    }
-    
-    function timTaiKhoanCha(maTK, capTaiKhoan) {
-      const ma = maTK.toString().trim();
-      const taiKhoanCha = [];
-      if (capTaiKhoan === 3 && ma.length >= 4) {
-        taiKhoanCha.push(ma.substring(0, 4));
-        taiKhoanCha.push(ma.substring(0, 3));
-      } else if (capTaiKhoan === 2 && ma.length >= 3) {
-        taiKhoanCha.push(ma.substring(0, 3));
-      }
-      return taiKhoanCha;
-    }
-    
-    function kiemTraTaiKhoanThuocFilter(maTK) {
-      if (!isFiltered) return true;
-      const ma = maTK.toString().trim();
-      return selectedAccounts.some(selectedTK => ma.startsWith(selectedTK));
-    }
-    
-    ss.toast('Đang đọc danh mục tài khoản...', 'Bước 2/4', -1);
-    const dataDMTK = sheetDMTK.getDataRange().getValues();
-    for (let i = 1; i < dataDMTK.length; i++) {
-      const row = dataDMTK[i];
-      const maTK = row[0]?.toString().trim();
-      if (maTK) {
-        taiKhoanMap.set(maTK, {
-          ten: row[1]?.toString().trim(),
-          loai: parseInt(row[2]) || 0,
-          duNoDauKyGoc: parseFloat(row[3]) || 0,
-          duCoDauKyGoc: parseFloat(row[4]) || 0,
-          phatSinhNoTruocKy: 0, phatSinhCoTruocKy: 0,
-          phatSinhNoTrongKy: 0, phatSinhCoTrongKy: 0,
-          tinhChat: xacDinhTinhChatTaiKhoan(maTK)
-        });
-      }
-    }
-    
-    ss.toast('Đang xử lý dữ liệu phát sinh...', 'Bước 3/4', -1);
-    
-    for (const row of combinedData) {
-      const ngayHachToan = new Date(row.ngay);
-      const tkNo = row.tkNo?.toString().trim();
-      const tkCo = row.tkCo?.toString().trim();
-      
-      // ⭐ THAY ĐỔI 2: Logic xử lý tiền hàng và tiền thuế
-      let tienHang = parseFloat(row.soTien) || 0;
-      const tienVAT = parseFloat(row.thueVAT) || 0;
-      const tkThue = row.tkThue?.toString().trim();
-
-      // Nếu có tiền thuế nhưng không có tài khoản thuế, cộng gộp vào tiền hàng
-      if (tienVAT > 0 && !tkThue) {
-        tienHang += tienVAT;
-      }
-      
-      const laGiaoDichTruocKy = ngayHachToan < startDate;
-      const laGiaoDichTrongKy = ngayHachToan >= startDate && ngayHachToan <= endDate;
-      
-      if (laGiaoDichTruocKy || laGiaoDichTrongKy) {
-        const capNhatPhatSinh = (maTK, soTien, loai) => {
-          if (!taiKhoanMap.has(maTK)) {
-            taiKhoanMap.set(maTK, {
-              ten: `Tài khoản ${maTK}`, loai: maTK.length, duNoDauKyGoc: 0, duCoDauKyGoc: 0,
-              phatSinhNoTruocKy: 0, phatSinhCoTruocKy: 0, phatSinhNoTrongKy: 0, phatSinhCoTrongKy: 0,
-              tinhChat: xacDinhTinhChatTaiKhoan(maTK)
-            });
-          }
-          const tk = taiKhoanMap.get(maTK);
-          if (laGiaoDichTruocKy) {
-            if (loai === 'NO') tk.phatSinhNoTruocKy += soTien; else tk.phatSinhCoTruocKy += soTien;
-          } else {
-            if (loai === 'NO') tk.phatSinhNoTrongKy += soTien; else tk.phatSinhCoTrongKy += soTien;
-          }
-        };
-        
-        if (tienHang > 0) {
-          if (tkNo) capNhatPhatSinh(tkNo, tienHang, 'NO');
-          if (tkCo) capNhatPhatSinh(tkCo, tienHang, 'CO');
-        }
-        
-        if (tienVAT > 0 && tkThue) {
-          const giaoDichVAT = xuLyVAT(tkNo, tkCo, tienVAT, tkThue);
-          for (const vatGD of giaoDichVAT) {
-            if (vatGD.tkNo) capNhatPhatSinh(vatGD.tkNo, vatGD.soTien, 'NO');
-            if (vatGD.tkCo) capNhatPhatSinh(vatGD.tkCo, vatGD.soTien, 'CO');
-          }
-        }
-      }
-    }
-    
-    const sortedByLevel = Array.from(taiKhoanMap.entries()).sort((a, b) => b[1].loai - a[1].loai || a[0].localeCompare(b[0]));
-    
-    for (const [maTK, thongTin] of sortedByLevel) {
-      const taiKhoanCha = timTaiKhoanCha(maTK, thongTin.loai);
-      for (const maCha of taiKhoanCha) {
-        if (taiKhoanMap.has(maCha)) {
-          const thongTinCha = taiKhoanMap.get(maCha);
-          thongTinCha.duNoDauKyGoc += thongTin.duNoDauKyGoc;
-          thongTinCha.duCoDauKyGoc += thongTin.duCoDauKyGoc;
-          thongTinCha.phatSinhNoTruocKy += thongTin.phatSinhNoTruocKy;
-          thongTinCha.phatSinhCoTruocKy += thongTin.phatSinhCoTruocKy;
-          thongTinCha.phatSinhNoTrongKy += thongTin.phatSinhNoTrongKy;
-          thongTinCha.phatSinhCoTrongKy += thongTin.phatSinhCoTrongKy;
-        }
-      }
-    }
-    
-    ss.toast('Đang tạo báo cáo...', 'Bước 4/4', -1);
-    
-    const outputData = [];
-    const finalSorted = Array.from(taiKhoanMap.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-    
-    for (const [maTK, thongTin] of finalSorted) {
-      const [duNoDauKy, duCoDauKy] = tinhSoDuSauPhatSinh(thongTin.duNoDauKyGoc, thongTin.duCoDauKyGoc, thongTin.phatSinhNoTruocKy, thongTin.phatSinhCoTruocKy, thongTin.tinhChat);
-      const coPhatSinh = thongTin.phatSinhNoTrongKy !== 0 || thongTin.phatSinhCoTrongKy !== 0;
-      const coSoDu = duNoDauKy !== 0 || duCoDauKy !== 0;
-
-      if (kiemTraTaiKhoanThuocFilter(maTK) && (coPhatSinh || coSoDu)) {
-        const [duNoCuoiKy, duCoCuoiKy] = tinhSoDuSauPhatSinh(duNoDauKy, duCoDauKy, thongTin.phatSinhNoTrongKy, thongTin.phatSinhCoTrongKy, thongTin.tinhChat);
-        outputData.push([maTK, thongTin.ten, thongTin.loai, duNoDauKy, duCoDauKy, thongTin.phatSinhNoTrongKy, thongTin.phatSinhCoTrongKy, duNoCuoiKy, duCoCuoiKy]);
-      }
-    }
-    
-    const lastRow = sheetCDPS.getLastRow();
-    if (lastRow >= 4) sheetCDPS.getRange(4, 1, lastRow - 3, 10).clear();
-    
-    if (outputData.length > 0) {
-      sheetCDPS.getRange(5, 1, outputData.length, 9).setValues(outputData);
-      sheetCDPS.getRange(5, 4, outputData.length, 6).setNumberFormat('#,##0');
-      
-      for (let i = 0; i < outputData.length; i++) {
-        if (outputData[i][2] === 1) {
-          sheetCDPS.getRange(5 + i, 1, 1, 10).setFontWeight('bold').setBackground('#E7E6E6');
-        }
-      }
+      }).withFailureHandler(err => {
+        document.getElementById('hanghoaList').innerHTML = `<div style="padding: 20px; text-align: center; color: #dc3545;">Lỗi tải dữ liệu: ${err}</div>`;
+      }).getHangHoaForSidebar();
     }
 
-    ss.toast('✅ Hoàn thành!', 'Thành công', 5);
-    ui.alert(`✅ Báo cáo Cân đối Phát sinh đã hoàn thành cho kỳ báo cáo từ ${startDate.toLocaleDateString('vi-VN')} đến ${endDate.toLocaleDateString('vi-VN')}.`);
-  
-  } catch (error) {
-    console.error("LỖI TẠO BÁO CÁO CDPS: " + error.toString() + error.stack);
-    ss.toast('❌ Lỗi: ' + error.toString(), 'Lỗi', 10);
-    SpreadsheetApp.getUi().alert('❌ Lỗi khi tạo báo cáo Cân đối Phát sinh:\n\n' + error.toString());
-  }
-}
-
-//--------------------------------------------------------------------------------------------
-
-// ==================== CÁC HÀM KHÁC GIỮ NGUYÊN ====================
-
-function openAccountFilter() {
-  const html = HtmlService.createTemplateFromFile('sidebarLocCDPS');
-  html.accounts = getLevel1Accounts();
-  html.selectedAccounts = getSelectedAccounts();
-  
-  const htmlOutput = html.evaluate()
-    .setWidth(350)
-    .setTitle('🏦 Lọc Tài khoản Cấp 1');
-  
-  SpreadsheetApp.getUi().showSidebar(htmlOutput);
-}
-
-function getLevel1Accounts() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheetDMTK = ss.getSheetByName('DMTK');
-  
-  if (!sheetDMTK) return [];
-  
-  const data = sheetDMTK.getDataRange().getValues();
-  const level1Accounts = [];
-  
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const maTK = row[0]?.toString().trim();
-    const tenTK = row[1]?.toString().trim();
-    const loaiTK = parseInt(row[2]) || 0;
-    
-    if (maTK && loaiTK === 1) {
-      level1Accounts.push({
-        ma: maTK,
-        ten: tenTK
+    function renderAccountList(accounts) {
+      const listElement = document.getElementById('accountList');
+      if (accounts.length === 0) {
+        listElement.innerHTML = '<div style="padding: 20px; text-align: center; color: #5f6368;">Không tìm thấy tài khoản.</div>';
+        return;
+      }
+      let html = '';
+      accounts.forEach(acc => {
+        const isChecked = selectedAccounts.includes(acc.ma);
+        html += `
+          <label class="account-item" for="acc-${acc.ma}">
+            <input type="checkbox" id="acc-${acc.ma}" value="${acc.ma}" ${isChecked ? 'checked' : ''} onchange="updateSelection()">
+            <div class="account-info">
+              <div class="account-code">${acc.ma}</div>
+              <div class="account-name">${acc.ten}</div>
+            </div>
+          </label>`;
       });
+      listElement.innerHTML = html;
     }
-  }
-  
-  return level1Accounts.sort((a, b) => a.ma.localeCompare(b.ma));
-}
 
-function getSelectedAccounts() {
-  const selected = PropertiesService.getDocumentProperties().getProperty('selectedAccounts');
-  return selected ? JSON.parse(selected) : [];
-}
-
-function saveSelectedAccounts(selectedAccounts) {
-  PropertiesService.getDocumentProperties().setProperty('selectedAccounts', JSON.stringify(selectedAccounts));
-  return true;
-}
-
-function clearAccountFilter() {
-  PropertiesService.getDocumentProperties().deleteProperty('selectedAccounts');
-  return true;
-}
-
-
-/**
- * HÀM PHỤ: Kiểm tra tính hợp lệ của dữ liệu đầu vào
- */
-function validateInputData(startDateStr, endDateStr, taiKhoanCanXem) {
-  const errors = [];
-  
-  // Kiểm tra ngày
-  if (!startDateStr || !endDateStr) {
-    errors.push('Thiếu tham số ngày bắt đầu hoặc kết thúc');
-  } else {
-    const startDate = new Date(startDateStr);
-    const endDate = new Date(endDateStr);
-    
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      errors.push('Định dạng ngày không hợp lệ');
-    } else if (startDate > endDate) {
-      errors.push('Ngày bắt đầu không thể lớn hơn ngày kết thúc');
-    }
-  }
-  
-  // Kiểm tra tài khoản
-  if (!taiKhoanCanXem || !Array.isArray(taiKhoanCanXem) || taiKhoanCanXem.length === 0) {
-    errors.push('Thiếu danh sách tài khoản cần xem');
-  } else {
-    taiKhoanCanXem.forEach((tk, index) => {
-      if (!tk || typeof tk !== 'string' || tk.trim() === '') {
-        errors.push(`Tài khoản thứ ${index + 1} không hợp lệ`);
+    function renderWriteAccountsList(accounts) {
+      const listElement = document.getElementById('writeAccountList');
+      if (accounts.length === 0) {
+        listElement.innerHTML = '<div style="padding: 20px; text-align: center; color: #5f6368;">Không tìm thấy tài khoản.</div>';
+        return;
       }
-    });
-  }
-  
-  return errors;
-}
-
-
-
-
-/**
- * HÀM PHỤ: Xây dựng cấu trúc phân cấp tài khoản
- */
-function buildAccountHierarchy(taiKhoanList) {
-  const hierarchy = new Map();
-  
-  // Phân loại tài khoản theo cấp độ
-  taiKhoanList.forEach(tk => {
-    const level = determineAccountLevel(tk.ma, tk.loai);
-    
-    if (!hierarchy.has(level)) {
-      hierarchy.set(level, []);
-    }
-    hierarchy.get(level).push(tk);
-  });
-  
-  return hierarchy;
-}
-
-/**
- * HÀM PHỤ: Xác định cấp độ tài khoản
- */
-function determineAccountLevel(maTK, loai) {
-  // Nếu có cột LOAI, ưu tiên sử dụng
-  if (loai && loai > 0) {
-    return loai;
-  }
-  
-  // Tự động xác định cấp độ dựa vào độ dài và pattern
-  const length = maTK.length;
-  
-  if (length === 3) return 1;        // Cấp 1: 111, 112, 131
-  if (length === 4) return 2;        // Cấp 2: 1111, 1112, 131KH
-  if (length === 5) return 3;        // Cấp 3: 11111, 11121, 1111chinhanh
-  if (length >= 6) return 4;         // Cấp 4+: 111111, 1111111...
-  
-  return 1; // Mặc định là cấp 1
-}
-
-
-
-/**
- * HÀM PHỤ: Kiểm tra xem một tài khoản có phải là con của tài khoản cha không (bao gồm tất cả các cấp)
- * SỬA LẠI: Tổng hợp tất cả các cấp con, không chỉ con trực tiếp
- */
-function isChildAccount(parentAccount, childAccount) {
-  // Tài khoản con phải dài hơn tài khoản cha và bắt đầu bằng mã của cha
-  return childAccount.length > parentAccount.length && childAccount.startsWith(parentAccount);
-}
-
-/**
- * HÀM PHỤ: Tìm tài khoản con sử dụng index (SỬA LẠI - TÌM TẤT CẢ CÁC CẤP CON)
- */
-function findChildAccountsOptimized(parentAccount, accountIndex) {
-  const children = [];
-  const parentPattern = parentAccount;
-  
-  // Sử dụng index để tìm kiếm nhanh
-  if (accountIndex.has(parentPattern)) {
-    const potentialChildren = accountIndex.get(parentPattern);
-    
-    potentialChildren.forEach(acc => {
-      if (acc.ma !== parentAccount && isChildAccount(parentAccount, acc.ma)) {
-        children.push(acc);
-      }
-    });
-  }
-  
-  return children;
-}
-
-
-
-/**
- * HÀM PHỤ: Kiểm tra xem một tài khoản có thuộc hệ thống tài khoản cha-con không
- */
-function isAccountInHierarchy(accountCode, parentAccount, childAccounts) {
-  if (accountCode === parentAccount) return true;
-  return childAccounts.some(child => child.ma === accountCode);
-}
-
-/**
- * HÀM PHỤ: Tính số dư đầu kỳ động cho tài khoản đơn lẻ (KHÔNG có tài khoản con)
- * SỬA LẠI: Chỉ tính cho tài khoản được yêu cầu, không tính trùng lặp
- */
-function tinhSoDuDauKyDongChoTaiKhoanDonLe(taiKhoan, allTransactions, ngayBatDau, taiKhoanMap) {
-  let duNo = 0;
-  let duCo = 0;
-  
-  // 1. Số dư gốc của tài khoản
-  const tkInfo = taiKhoanMap.get(taiKhoan);
-  if (tkInfo) {
-    duNo += tkInfo.duNoGoc;
-    duCo += tkInfo.duCoGoc;
-  }
-  
-  // 2. Cộng tất cả giao dịch TRƯỚC kỳ báo cáo (CHỈ tính cho tài khoản này)
-  allTransactions.forEach(trans => {
-    if (new Date(trans.NGAY_HT) < ngayBatDau) {
-      // Giao dịch liên quan đến tài khoản được yêu cầu
-      if (trans.TK_NO === taiKhoan) {
-        duNo += trans.SO_TIEN; // Tăng dư nợ
-      }
-      if (trans.TK_CO === taiKhoan) {
-        duCo += trans.SO_TIEN; // Tăng dư có
-      }
-    }
-  });
-  
-  // 3. Tính số dư động đầu kỳ theo tính chất tài khoản
-  return tinhSoDuDongDauKy(duNo, duCo);
-}
-
-/**
- * HÀM PHỤ: Tính số dư đầu kỳ động cho tài khoản cha (bao gồm TẤT CẢ các cấp con)
- * SỬA LẠI: Tính tất cả các cấp con, không chỉ con trực tiếp
- */
-function tinhSoDuDauKyDongChoTaiKhoanCha(parentAccount, childAccounts, allTransactions, ngayBatDau, taiKhoanMap) {
-  let duNo = 0;
-  let duCo = 0;
-  
-  // 1. Số dư gốc của tài khoản cha
-  const parentInfo = taiKhoanMap.get(parentAccount);
-  if (parentInfo) {
-    duNo += parentInfo.duNoGoc;
-    duCo += parentInfo.duCoGoc;
-  }
-  
-  // 2. Số dư gốc của TẤT CẢ tài khoản con (mọi cấp)
-  childAccounts.forEach(child => {
-    const childInfo = taiKhoanMap.get(child.ma);
-    if (childInfo) {
-      duNo += childInfo.duNoGoc;
-      duCo += childInfo.duCoGoc;
-    }
-  });
-  
-  // 3. Cộng tất cả giao dịch TRƯỚC kỳ báo cáo (tính cho tài khoản cha và TẤT CẢ con)
-  allTransactions.forEach(trans => {
-    if (new Date(trans.NGAY_HT) < ngayBatDau) {
-      // Giao dịch liên quan đến tài khoản cha
-      if (trans.TK_NO === parentAccount) {
-        duNo += trans.SO_TIEN; // Tăng dư nợ
-      }
-      if (trans.TK_CO === parentAccount) {
-        duCo += trans.SO_TIEN; // Tăng dư có
-      }
-      
-      // Giao dịch liên quan đến TẤT CẢ tài khoản con (mọi cấp)
-      if (isChildAccount(parentAccount, trans.TK_NO)) {
-        duNo += trans.SO_TIEN; // Tăng dư nợ
-      }
-      if (isChildAccount(parentAccount, trans.TK_CO)) {
-        duCo += trans.SO_TIEN; // Tăng dư có
-      }
-    }
-  });
-  
-  // 4. Tính số dư động đầu kỳ theo tính chất tài khoản
-  return tinhSoDuDongDauKy(duNo, duCo);
-}
-
-/**
- * HÀM PHỤ: Tính số dư đầu kỳ động cho tài khoản (SỬA LẠI - GỌI ĐÚNG FUNCTION)
- */
-function tinhSoDuDauKyDongChoTaiKhoan(parentAccount, childAccounts, allTransactions, ngayBatDau, taiKhoanMap) {
-  // Nếu có tài khoản con (mọi cấp) -> gọi function tổng hợp
-  if (childAccounts.length > 0) {
-    return tinhSoDuDauKyDongChoTaiKhoanCha(parentAccount, childAccounts, allTransactions, ngayBatDau, taiKhoanMap);
-  }
-  
-  // Nếu không có tài khoản con -> gọi function đơn lẻ
-  return tinhSoDuDauKyDongChoTaiKhoanDonLe(parentAccount, allTransactions, ngayBatDau, taiKhoanMap);
-}
-
-/**
- * HÀM PHỤ: Tính số dư động đầu kỳ theo tính chất tài khoản kế toán
- * SỬA LẠI: Logic tính toán chính xác
- */
-function tinhSoDuDongDauKy(duNo, duCo) {
-  // Nếu cả dư nợ và dư có đều = 0
-  if (duNo === 0 && duCo === 0) {
-    return [0, 0];
-  }
-  
-  // Nếu chỉ có dư nợ
-  if (duNo > 0 && duCo === 0) {
-    return [duNo, 0];
-  }
-  
-  // Nếu chỉ có dư có
-  if (duCo > 0 && duNo === 0) {
-    return [0, duCo];
-  }
-  
-  // Nếu cả dư nợ và dư có đều > 0 (có phát sinh trái dấu)
-  if (duNo > 0 && duCo > 0) {
-    if (duNo > duCo) {
-      return [duNo - duCo, 0]; // Dư nợ
-    } else {
-      return [0, duCo - duNo]; // Dư có
-    }
-  }
-  
-  // Trường hợp âm (không nên xảy ra trong thực tế)
-  if (duNo < 0) {
-    return [0, Math.abs(duNo)];
-  }
-  if (duCo < 0) {
-    return [Math.abs(duCo), 0];
-  }
-  
-  return [0, 0];
-}
-
-/**
- * HÀM PHỤ: Xác định tính chất tài khoản kế toán
- */
-function getAccountNature(maTK) {
-  const firstDigit = maTK.charAt(0);
-  
-  // Tài khoản dư nợ (Tài sản, Chi phí)
-  if (['1', '2', '6', '8'].includes(firstDigit)) {
-    return 'NO'; // Dư nợ
-  }
-  
-  // Tài khoản dư có (Nguồn vốn, Doanh thu)
-  if (['3', '4', '5', '7'].includes(firstDigit)) {
-    return 'CO'; // Dư có
-  }
-  
-  // Mặc định
-  return 'NO';
-}
-
-/**
- * HÀM PHỤ: Tính toán số dư cuối kỳ với xử lý giao dịch nội bộ (SỬA LẠI)
- */
-function calculateFinalBalanceWithInternalHandling(parentAccount, childAccounts, duNoDauKy, duCoDauKy, transactionsInPeriod) {
-  let duNoCuoiKy = duNoDauKy;
-  let duCoCuoiKy = duCoDauKy;
-  
-  // Xử lý giao dịch nội bộ
-  const filteredTransactions = handleInternalTransactions(transactionsInPeriod, parentAccount, childAccounts);
-  
-  filteredTransactions.forEach(trans => {
-    const [phatSinhNo, phatSinhCo] = calculateAggregatedPhatSinh(trans, parentAccount, childAccounts);
-    
-    // Cập nhật số dư cuối kỳ (GIỮ NGUYÊN LOGIC HIỆN TẠI)
-    let duNoMoi = duNoCuoiKy + phatSinhNo;
-    let duCoMoi = duCoCuoiKy + phatSinhCo;
-    [duNoCuoiKy, duCoCuoiKy] = tinhSoDu(duNoMoi, duCoMoi);
-  });
-  
-  return [duNoCuoiKy, duCoCuoiKy];
-}
-
-/**
- * HÀM PHỤ: Tính toán phát sinh tổng hợp từ tài khoản cha và con (SỬA LẠI)
- */
-
-function calculateAggregatedPhatSinh(trans, parentAccount, childAccounts) {
-  const accounts = [parentAccount, ...childAccounts.map(c => c.ma)];
-  const isInternalNo = accounts.includes(trans.TK_NO);
-  const isInternalCo = accounts.includes(trans.TK_CO);
-
-  let phatSinhNo = 0, phatSinhCo = 0;
-  if (isInternalNo && !isInternalCo) phatSinhNo = trans.SO_TIEN;
-  if (isInternalCo && !isInternalNo) phatSinhCo = trans.SO_TIEN;
-
-  return [phatSinhNo, phatSinhCo];
-}
-
-/**
- * HÀM PHỤ: Lấy giao dịch trong kỳ báo cáo cho tài khoản cha (bao gồm tài khoản con)
- */
-function getTransactionsForParentAccount(parentAccount, childAccounts, allTransactions, ngayBatDau, ngayKetThuc) {
-  return allTransactions.filter(trans => {
-    const ngayGiaoDich = new Date(trans.NGAY_HT);
-    const inPeriod = ngayGiaoDich >= ngayBatDau && ngayGiaoDich <= ngayKetThuc;
-    
-    if (!inPeriod) return false;
-    
-    // Giao dịch liên quan đến tài khoản cha
-    if (trans.TK_NO === parentAccount || trans.TK_CO === parentAccount) {
-      return true;
-    }
-    
-    // Giao dịch liên quan đến tài khoản con
-    if (isAccountInHierarchy(trans.TK_NO, parentAccount, childAccounts) ||
-        isAccountInHierarchy(trans.TK_CO, parentAccount, childAccounts)) {
-      return true;
-    }
-    
-    return false;
-  }).sort((a, b) => new Date(a.NGAY_HT) - new Date(b.NGAY_HT));
-}
-
-/**
- * HÀM PHỤ: Xử lý danh sách giao dịch thô, tạo ra các bút toán thuế GTGT ảo.
- */
-
-
-
-/**
- * HÀM PHỤ: Tính toán số dư cuối kỳ từ tổng nợ và tổng có.
- */
-function tinhSoDu(tongNo, tongCo) {
-  if (tongNo > tongCo) {
-    return [tongNo - tongCo, 0];
-  } else {
-    return [0, tongCo - tongNo];
-  }
-}
-/**
- * Lấy toàn bộ danh sách tài khoản từ DMTK để hiển thị trên sidebar.
- */
-function getAccountsForSidebar() {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheetDMTK = ss.getSheetByName('DMTK');
-    if (!sheetDMTK) return [];
-
-    const data = sheetDMTK.getDataRange().getValues();
-    const accounts = [];
-    for (let i = 1; i < data.length; i++) {
-      const maTK = data[i][0]?.toString().trim();
-      const tenTK = data[i][1]?.toString().trim();
-      if (maTK && tenTK) {
-        accounts.push({ ma: maTK, ten: tenTK });
-      }
-    }
-    return accounts.sort((a, b) => a.ma.localeCompare(b.ma));
-  } catch (e) {
-    console.error("Lỗi khi lấy danh sách tài khoản: " + e.toString());
-    return [];
-  }
-}
-
-/**
- * Hàm mới để mở sidebar Unified - Bảng điều khiển tổng hợp
- */
-function moSidebarUnified() {
-  const html = HtmlService.createHtmlOutputFromFile('SidebarUnified')
-    .setWidth(450)
-    .setTitle('🚀 Bảng Điều Khiển');
-  SpreadsheetApp.getUi().showSidebar(html);
-}
-
-/**
- * Hàm mới để mở sidebar Sổ chi tiết (giữ lại để tương thích)
- */
-function moSidebarSoChiTiet() {
-  const html = HtmlService.createHtmlOutputFromFile('sidebarSoChiTiet')
-    .setWidth(400)
-    .setTitle('📖 Tùy chọn Sổ Chi Tiết');
-  SpreadsheetApp.getUi().showSidebar(html);
-}
-
-// ==================== SIDEBAR TÀI KHOẢN - GIẢI PHÁP 1 ====================
-
-// Hàm mở sidebar tài khoản (đã đơn giản hóa)
-function moSidebarTaiKhoan() {
-  const html = HtmlService.createHtmlOutputFromFile('sidebarTaiKhoan') // Tên file HTML của bạn
-    .setWidth(400)
-    .setTitle('💼 Chọn Tài khoản');
-  SpreadsheetApp.getUi().showSidebar(html);
-}
-
-// Lấy dữ liệu tài khoản cho sidebar (đã đơn giản hóa)
-function getTaiKhoanDataForSidebar() {
-  // Lấy ra bộ nhớ đệm của script
-  const cache = CacheService.getScriptCache();
-  const CACHE_KEY = 'DANH_SACH_TAI_KHOAN';
-
-  // 1. Thử lấy dữ liệu từ cache trước
-  const cachedData = cache.get(CACHE_KEY);
-  if (cachedData != null) {
-    console.log('✅ Loaded accounts from CACHE.');
-    // Nếu có, giải nén và trả về ngay lập tức
-    return {
-      accounts: JSON.parse(cachedData)
-    };
-  }
-
-  // 2. Nếu cache không có, đọc từ Sheet như bình thường
-  console.log('⚠️ Cache miss. Reading accounts from Sheet.');
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheetDMTK = ss.getSheetByName('DMTK');
-  
-  if (!sheetDMTK) {
-    throw new Error('Không tìm thấy sheet DMTK');
-  }
-  
-  try {
-    const data = sheetDMTK.getDataRange().getValues();
-    const accounts = [];
-    
-    // Bỏ qua dòng tiêu đề (i = 1)
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      const ma = row[0]?.toString().trim();
-      const ten = row[1]?.toString().trim();
-      const loai = row[2] || null;
-      if (ma && ten) {
-        accounts.push({ ma, ten, loai });
-      }
-    }
-    
-    accounts.sort((a, b) => a.ma.localeCompare(b.ma));
-    
-    // 3. Lưu dữ liệu vào cache cho lần sử dụng tiếp theo
-    // Dữ liệu sẽ được lưu trong 15 phút (900 giây)
-    cache.put(CACHE_KEY, JSON.stringify(accounts), 900);
-    console.log(`✅ Loaded and cached ${accounts.length} accounts.`);
-    
-    return {
-      accounts: accounts
-    };
-    
-  } catch (error) {
-    console.error('Lỗi lấy dữ liệu tài khoản:', error.toString());
-    throw new Error('Không thể lấy dữ liệu tài khoản: ' + error.toString());
-  }
-}
-
-/**
- * **SỬA LỖI**: Ghi tài khoản vào Ô ĐANG HOẠT ĐỘNG (ACTIVE CELL) mới nhất.
- * Hàm này không còn nhận tham số 'context' từ sidebar nữa.
- * Nó sẽ tự động xác định ô người dùng đang chọn và ghi dữ liệu vào đó.
- */
-function ghiTaiKhoanVaoCell(maTK) {
-  try {
-    // 1. Kiểm tra đầu vào
-    if (!maTK || typeof maTK !== 'string' || maTK.trim() === '') {
-      return { success: false, error: 'Mã tài khoản không hợp lệ' };
-    }
-    
-    // 2. Lấy ô đang hoạt động (active cell) mới nhất
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const activeCell = ss.getActiveCell();
-
-    if (!activeCell) {
-      return { 
-        success: false, 
-        error: 'Không thể xác định vị trí cell. Vui lòng chọn một cell trước.' 
-      };
-    }
-    
-    // 3. Ghi dữ liệu vào ô
-    const maTKTrimmed = maTK.trim();
-    activeCell.setValue(maTKTrimmed);
-    
-    const cellAddress = activeCell.getA1Notation();
-    const sheetName = activeCell.getSheet().getName();
-    console.log(`✅ Written "${maTKTrimmed}" to ${sheetName}!${cellAddress}`);
-    
-    // (Tùy chọn) Lưu tài khoản gần đây - không ảnh hưởng logic chính
-    saveRecentAccount(maTKTrimmed);
-
-    return { success: true };
-
-  } catch (error) {
-    const errorMessage = `Lỗi hệ thống: ${error.toString()}`;
-    console.error('❌ Error in ghiTaiKhoanVaoCell:', errorMessage);
-    return { 
-      success: false, 
-      error: errorMessage 
-    };
-  }
-}
-
-// Hàm lưu tài khoản gần đây (giữ nguyên, không cần sửa)
-function saveRecentAccount(maTK) {
-  try {
-    const properties = PropertiesService.getDocumentProperties();
-    let recentAccounts = [];
-    const recentData = properties.getProperty('RECENT_ACCOUNTS');
-    if (recentData) {
-      recentAccounts = JSON.parse(recentData);
-    }
-    recentAccounts = recentAccounts.filter(acc => acc !== maTK);
-    recentAccounts.unshift(maTK);
-    if (recentAccounts.length > 10) {
-      recentAccounts = recentAccounts.slice(0, 10);
-    }
-    properties.setProperty('RECENT_ACCOUNTS', JSON.stringify(recentAccounts));
-    return true;
-  } catch (error) {
-    console.error('Lỗi lưu recent account:', error.toString());
-    return false;
-  }
-}
-
-// Thêm hàm này vào file .gs của bạn
-function clearAccountCache() {
-  CacheService.getScriptCache().remove('DANH_SACH_TAI_KHOAN');
-  console.log('🧹 Account cache cleared.');
-}
-
-/**
- * Hàm lấy danh sách tài khoản gần đây
- */
-function getRecentAccounts() {
-  try {
-    const properties = PropertiesService.getDocumentProperties();
-    const recentData = properties.getProperty('RECENT_ACCOUNTS');
-    if (recentData) {
-      return JSON.parse(recentData);
-    }
-    return [];
-  } catch (error) {
-    console.error('Lỗi lấy tài khoản gần đây:', error.toString());
-    return [];
-  }
-}
-
-/**
- * Hàm lưu ngày báo cáo vào Properties Service
- */
-function saveReportDates(startDate, endDate) {
-  try {
-    const properties = PropertiesService.getDocumentProperties();
-    const datesData = { startDate, endDate };
-    properties.setProperty('REPORT_DATES', JSON.stringify(datesData));
-    return true;
-  } catch (error) {
-    console.error('Lỗi lưu ngày báo cáo:', error.toString());
-    return false;
-  }
-}
-
-/**
- * Hàm lấy ngày báo cáo từ Properties Service
- */
-function getReportDates() {
-  try {
-    const properties = PropertiesService.getDocumentProperties();
-    const datesData = properties.getProperty('REPORT_DATES');
-    if (datesData) {
-      return JSON.parse(datesData);
-    }
-    return null;
-  } catch (error) {
-    console.error('Lỗi lấy ngày báo cáo:', error.toString());
-    return null;
-  }
-}
-
-/**
- * Hàm mới để lấy dữ liệu hàng hóa cho sidebar Unified
- */
-
-function getHangHoaForSidebar() {
-  try {
-    const cache = CacheService.getScriptCache();
-    const CACHE_KEY = 'DANH_SACH_HANG_HOA';
-    const cachedData = cache.get(CACHE_KEY);
-    
-    if (cachedData != null) {
-      console.log('✅ Loaded products from CACHE for Unified sidebar.');
-      const hangHoaList = JSON.parse(cachedData);
-      // Khi tải từ cache, uniqueId đã được đảm bảo là duy nhất từ lần lưu trước.
-      return hangHoaList;
-    }
-
-    console.log('⚠️ Cache miss. Reading products from Sheet "DMHH" for Unified sidebar.');
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheetDMHH = ss.getSheetByName('DMHH');
-    if (!sheetDMHH) {
-      throw new Error('Không tìm thấy sheet "DMHH"');
-    }
-
-    // *** SỬA ĐỔI 1: Chỉ lấy vùng dữ liệu có chứa nội dung để tránh timeout ***
-    // Giả sử dữ liệu nằm từ cột A đến E
-    const lastRow = sheetDMHH.getLastRow();
-    // Nếu sheet chỉ có header hoặc không có gì, trả về mảng rỗng
-    if (lastRow < 2) return []; 
-    const data = sheetDMHH.getRange('A2:E' + lastRow).getValues();
-
-    const hangHoaList = [];
-    
-    // Bắt đầu từ dòng 2 (chỉ số 0 trong mảng data)
-    for (let i = 0; i < data.length; i++) {
-      const row = data[i];
-      const maKho = row[0]?.toString().trim();
-      const maHang = row[1]?.toString().trim();
-      
-      if (maKho && maHang) {
-        // *** SỬA ĐỔI 2: Đảm bảo uniqueId LUÔN LUÔN là duy nhất bằng cách thêm chỉ số dòng ***
-        // Chỉ số i + 2 tương ứng với số dòng thực tế trên sheet
-        const uniqueId = `${maKho}|${maHang}|${i + 2}`;
-
-        const item = {
-          maKho: maKho,
-          maHang: maHang,
-          tenHang: row[2]?.toString().trim() || '',
-          quyCach: row[3]?.toString().trim() || '',
-          dvt: row[4]?.toString().trim() || '',
-          uniqueId: uniqueId // Gán ID đã được đảm bảo duy nhất
-        };
-        hangHoaList.push(item);
-      }
-    }
-
-    hangHoaList.sort((a, b) => a.maKho.localeCompare(b.maKho) || a.maHang.localeCompare(b.maHang));
-    
-    cache.put(CACHE_KEY, JSON.stringify(hangHoaList), 900); // Lưu vào cache trong 15 phút
-    console.log(`✅ Loaded and cached ${hangHoaList.length} products for Unified sidebar.`);
-
-    return hangHoaList;
-  } catch (e) {
-    console.error('Error in getHangHoaForSidebar: ' + e.toString());
-    return []; // Trả về mảng rỗng khi có lỗi
-  }
-}
-
-/**
- * HÀM HỖ TRỢ: Chạy hàm này thủ công để xóa cache khi cần kiểm tra dữ liệu mới.
- * 1. Mở trình chỉnh sửa Apps Script.
- * 2. Chọn hàm 'clearHangHoaCache' từ danh sách.
- * 3. Nhấn nút ▶ Run.
- */
-function clearHangHoaCache() {
-  CacheService.getScriptCache().remove('DANH_SACH_HANG_HOA');
-  console.log('Cache hàng hóa đã được xóa.');
-}
-/**
- * Hàm ghi hàng hóa vào sheet từ sidebar Unified (tương thích với cấu trúc dữ liệu mới)
- * @param {Array<Object>} selectedItems Mảng các đối tượng hàng hóa đã chọn từ sidebar Unified
- */
-function ghiHangHoaVaoSheet(selectedItems) {
-  try {
-    if (!selectedItems || selectedItems.length === 0) {
-      return { success: false, error: 'Không có hàng hóa nào được chọn.' };
-    }
-
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const activeCell = ss.getActiveCell();
-    const sheet = activeCell.getSheet();
-    const startRow = activeCell.getRow();
-    const startCol = activeCell.getColumn();
-    
-    // Tạo mảng 2 chiều với đầy đủ 5 thông tin
-    const outputData = selectedItems.map(item => [
-      item.maKho, 
-      item.maHang, 
-      item.tenHang, 
-      item.quyCach || '', 
-      item.dvt || ''      
-    ]);
-    
-    // Ghi dữ liệu ra một vùng rộng 5 cột
-    sheet.getRange(startRow, startCol, outputData.length, 5).setValues(outputData);
-
-    console.log(`✅ Unified Sidebar: Written ${outputData.length} items (5 columns) to ${sheet.getName()}`);
-    return { success: true, count: outputData.length }; 
-
-  } catch (e) {
-    console.error('Error in ghiHangHoaVaoSheet: ' + e.toString());
-    return { success: false, error: e.toString() };
-  }
-}
-
-/**
- * Hàm tạo báo cáo Nhập Xuất Tồn từ sidebar với hàng hóa đã chọn
- * Hoạt động tương tự như taoCanDoiPhatSinh - nhận tham số trực tiếp từ sidebar
- * @param {string} startDate Ngày bắt đầu (YYYY-MM-DD)
- * @param {string} endDate Ngày kết thúc (YYYY-MM-DD)
- * @param {Array<Object>} selectedHangHoa Mảng hàng hóa đã chọn từ sidebar
- */
-
-
-function taoNhapXuatTonFromSidebar(startDate, endDate, selectedHangHoa, reportType) {
-  try {
-    console.log(`🚀 Bắt đầu tạo báo cáo NXT (${reportType}) từ sidebar: ${startDate} → ${endDate}`);
-    console.log(`📦 Số lượng hàng hóa được chọn: ${selectedHangHoa.length}`);
-    
-    if (!selectedHangHoa || selectedHangHoa.length === 0) {
-      throw new Error('Không có hàng hóa nào được chọn');
-    }
-    
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-    const sheetDMHH = ss.getSheetByName('DMHH');
-    const sheetNXT = ss.getSheetByName('NXT');
-    
-    if (!sheetDMHH || !sheetNXT) {
-      throw new Error('Không tìm thấy sheet DMHH hoặc NXT');
-    }
-    
-    const ngayBatDau = new Date(startDate + 'T00:00:00');
-    const ngayKetThuc = new Date(endDate + 'T23:59:59');
-    
-    const selectedHangHoaKeys = selectedHangHoa.map(item => `${item.maKho}|${item.maHang}`);
-    
-    const result = xuLyDuLieuNhapXuatTon(sheetDMHH, sheetNXT, ngayBatDau, ngayKetThuc, selectedHangHoaKeys, reportType);
-    
-    console.log(`✅ Hoàn thành báo cáo NXT cho ${selectedHangHoa.length} hàng hóa`);
-    
-    return { 
-      success: true, 
-      message: `Đã tạo báo cáo NXT cho ${selectedHangHoa.length} hàng hóa`,
-      data: result
-    };
-    
-  } catch (error) {
-    console.error('❌ Lỗi trong taoNhapXuatTonFromSidebar: ' + error.toString());
-    throw new Error('Lỗi tạo báo cáo NXT: ' + error.toString());
-  }
-}
-
-/**
- * HÀM PHỤ: Xử lý dữ liệu Nhập Xuất Tồn
- * ⭐ CẬP NHẬT: Thêm logic lấy thứ tự gốc từ DMHH
- */
-function xuLyDuLieuNhapXuatTon(sheetDMHH, sheetNXT, ngayBatDau, ngayKetThuc, selectedHangHoaKeys, reportType) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const dataDMHH = sheetDMHH.getDataRange().getValues();
-  const headerRowDMHH = 1;
-  
-  const filterCondition = (row) => row.maKho && row.maHang && row.soLuong !== 0;
-  const dataResult = getAllDataFromDLSheets(ss, 'NXT', filterCondition);
-  const combinedData = dataResult.data;
-  
-  const hangHoaMap = new Map();
-  const dmhhKeysInOrder = []; // Mảng lưu thứ tự gốc
-
-  function kiemTraDieuKienLoc(maKho, maHang) {
-    const key = `${maKho}|${maHang}`;
-    return selectedHangHoaKeys.includes(key);
-  }
-
-  function phanLoaiGiaoDich(tkNo, tkCo) {
-    if (tkNo.startsWith('154')) return 'XUAT_SX';
-    if (tkCo.startsWith('154')) return 'NHAP';
-    if (tkNo.startsWith('15')) return 'NHAP';
-    if (tkCo.startsWith('15')) return 'XUAT';
-    return null;
-  }
-  
-  // BƯỚC 1: Đọc dữ liệu và thứ tự từ DMHH
-  for (let i = headerRowDMHH; i < dataDMHH.length; i++) {
-    const row = dataDMHH[i];
-    const maKho = row[0]?.toString().trim();
-    const maHang = row[1]?.toString().trim();
-    
-    if (maKho && maHang) {
-      const key = `${maKho}|${maHang}`;
-      // Lưu lại thứ tự của tất cả các mã hàng trong DMHH
-      dmhhKeysInOrder.push(key);
-
-      if (kiemTraDieuKienLoc(maKho, maHang)) {
-        hangHoaMap.set(key, {
-          maKho: maKho,
-          maHang: maHang,
-          tenHang: row[2]?.toString().trim(),
-          quyCache: row[3]?.toString().trim(),
-          dvt: row[4]?.toString().trim(),
-          slDauKyGoc: parseFloat(row[5]) || 0,
-          gtDauKyGoc: parseFloat(row[6]) || 0,
-          slNhapTruocKy: 0, gtNhapTruocKy: 0,
-          slXuatTruocKy: 0, gtXuatTruocKy: 0,
-          slXuatSXTruocKy: 0, gtXuatSXTruocKy: 0,
-          slNhapTrongKy: 0, gtNhapTrongKy: 0,
-          slXuatTrongKy: 0, gtXuatTrongKy: 0,
-          slXuatSXTrongKy: 0, gtXuatSXTrongKy: 0
-        });
-      }
-    }
-  }
-  
-  // BƯỚC 2: Xử lý dữ liệu giao dịch
-  for (let i = 0; i < combinedData.length; i++) {
-    const row = combinedData[i];
-    const key = `${row.maKho}|${row.maHang}`;
-    if (!kiemTraDieuKienLoc(row.maKho, row.maHang)) continue;
-    
-    const loaiGiaoDich = phanLoaiGiaoDich(row.tkNo, row.tkCo);
-    if (loaiGiaoDich === null) continue;
-    
-    if (!hangHoaMap.has(key)) {
-         hangHoaMap.set(key, {
-            maKho: row.maKho, maHang: row.maHang, tenHang: `Hàng ${row.maHang}`,
-            quyCache: '', dvt: '', slDauKyGoc: 0, gtDauKyGoc: 0,
-            slNhapTruocKy: 0, gtNhapTruocKy: 0, slXuatTruocKy: 0, gtXuatTruocKy: 0, slXuatSXTruocKy: 0, gtXuatSXTruocKy: 0,
-            slNhapTrongKy: 0, gtNhapTrongKy: 0, slXuatTrongKy: 0, gtXuatTrongKy: 0, slXuatSXTrongKy: 0, gtXuatSXTrongKy: 0
-        });
-    }
-
-    const hangHoa = hangHoaMap.get(key);
-    const ngayHachToan = new Date(row.ngay);
-    const laTruocKy = ngayHachToan < ngayBatDau;
-    
-    if (laTruocKy) {
-      if (loaiGiaoDich === 'NHAP') { hangHoa.slNhapTruocKy += row.soLuong; hangHoa.gtNhapTruocKy += row.soTien; }
-      if (loaiGiaoDich === 'XUAT') { hangHoa.slXuatTruocKy += row.soLuong; hangHoa.gtXuatTruocKy += row.soTien; }
-      if (loaiGiaoDich === 'XUAT_SX') { hangHoa.slXuatSXTruocKy += row.soLuong; hangHoa.gtXuatSXTruocKy += row.soTien; }
-    } else if (ngayHachToan <= ngayKetThuc) {
-      if (loaiGiaoDich === 'NHAP') { hangHoa.slNhapTrongKy += row.soLuong; hangHoa.gtNhapTrongKy += row.soTien; }
-      if (loaiGiaoDich === 'XUAT') { hangHoa.slXuatTrongKy += row.soLuong; hangHoa.gtXuatTrongKy += row.soTien; }
-      if (loaiGiaoDich === 'XUAT_SX') { hangHoa.slXuatSXTrongKy += row.soLuong; hangHoa.gtXuatSXTrongKy += row.soTien; }
-    }
-  }
-  
-  // BƯỚC 3: Lọc hàng hóa có dữ liệu
-  const hangHoaCoData = new Map();
-  for (const [key, hangHoa] of hangHoaMap.entries()) {
-    const slTonDauKy = hangHoa.slDauKyGoc + hangHoa.slNhapTruocKy - hangHoa.slXuatTruocKy - hangHoa.slXuatSXTruocKy;
-    if (slTonDauKy !== 0 || hangHoa.slNhapTrongKy !== 0 || hangHoa.slXuatTrongKy !== 0 || hangHoa.slXuatSXTrongKy !== 0) {
-      hangHoaCoData.set(key, hangHoa);
-    }
-  }
-  
-  // BƯỚC 4: Ghi dữ liệu vào sheet NXT, truyền thứ tự gốc vào
-  ghiDuLieuVaoSheetNXT(sheetNXT, hangHoaCoData, ngayBatDau, ngayKetThuc, reportType, dmhhKeysInOrder);
-  
-  const thongKe = {}; 
-  return thongKe;
-}
-
-/**
- * HÀM PHỤ: Ghi dữ liệu vào sheet NXT
- * ⭐ CẬP NHẬT: Sử dụng thứ tự từ DMHH thay vì sắp xếp lại
- */
-function ghiDuLieuVaoSheetNXT(sheetNXT, hangHoaCoData, ngayBatDau, ngayKetThuc, reportType, dmhhKeysInOrder) {
-  let headers1, headers2, outputColumns, mergeCellsDef;
-  let numCols, numberFormatDef, dataStartRow = 6, headerRows = 2;
-
-  const formatSL = '#,##0.00;-#,##0.00;';
-  const formatGT = '#,##0;-#,##0;';
-
-  if (reportType === 'SL') {
-    numCols = 11;
-    headerRows = 1;
-    dataStartRow = 5;
-    headers1 = ['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'ĐVT', 'SL Tồn đầu kỳ', 'SL Nhập trong kỳ', 'SL Xuất trong kỳ', 'SL Xuất SX trong kỳ', 'SL Tồn cuối kỳ', 'Ghi chú'];
-    headers2 = null;
-    outputColumns = item => [item.maKho, item.maHang, item.tenHang, item.quyCache, item.dvt, item.slTonDauKy, item.slNhapTrongKy, item.slXuatTrongKy, item.slXuatSXTrongKy, item.slTonCuoiKy, ''];
-    mergeCellsDef = [];
-    numberFormatDef = { format: formatSL, range: { col: 6, count: 5 } };
-  } else if (reportType === 'GT') {
-    numCols = 11;
-    headerRows = 1;
-    dataStartRow = 5;
-    headers1 = ['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'ĐVT', 'GT Tồn đầu kỳ', 'GT Nhập trong kỳ', 'GT Xuất trong kỳ', 'GT Xuất SX trong kỳ', 'GT Tồn cuối kỳ', 'Ghi chú'];
-    headers2 = null;
-    outputColumns = item => [item.maKho, item.maHang, item.tenHang, item.quyCache, item.dvt, item.gtTonDauKy, item.gtNhapTrongKy, item.gtXuatTrongKy, item.gtXuatSXTrongKy, item.gtTonCuoiKy, ''];
-    mergeCellsDef = [];
-    numberFormatDef = { format: formatGT, range: { col: 6, count: 5 } };
-  } else { // 'ALL'
-    numCols = 16;
-    headers1 = ['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'ĐVT', 'Tồn đầu kỳ', '', 'Nhập trong kỳ', '', 'Xuất trong kỳ', '', 'Xuất SX trong kỳ', '', 'Tồn cuối kỳ', '', 'Ghi chú'];
-    headers2 = ['', '', '', '', '', 'SL', 'Tiền', 'SL', 'Tiền', 'SL', 'Tiền', 'SL', 'Tiền', 'SL', 'Tiền', ''];
-    outputColumns = item => [item.maKho, item.maHang, item.tenHang, item.quyCache, item.dvt, item.slTonDauKy, item.gtTonDauKy, item.slNhapTrongKy, item.gtNhapTrongKy, item.slXuatTrongKy, item.gtXuatTrongKy, item.slXuatSXTrongKy, item.gtXuatSXTrongKy, item.slTonCuoiKy, item.gtTonCuoiKy, ''];
-    mergeCellsDef = [[4, 1, 2, 1], [4, 2, 2, 1], [4, 3, 2, 1], [4, 4, 2, 1], [4, 5, 2, 1], [4, 6, 1, 2], [4, 8, 1, 2], [4, 10, 1, 2], [4, 12, 1, 2], [4, 14, 1, 2], [4, 16, 2, 1]];
-    numberFormatDef = null;
-  }
-
-  const lastRow = sheetNXT.getLastRow();
-  if (lastRow >= 4) {
-    sheetNXT.getRange(4, 1, lastRow - 3, sheetNXT.getMaxColumns()).clear();
-  }
-  
-  sheetNXT.getRange(4, 1, 1, headers1.length).setValues([headers1]);
-  if (headers2) {
-    sheetNXT.getRange(5, 1, 1, headers2.length).setValues([headers2]);
-  }
-
-  if (mergeCellsDef.length > 0) {
-    for (const [row, col, numRows, numCols] of mergeCellsDef) {
-      sheetNXT.getRange(row, col, numRows, numCols).merge();
-    }
-  }
-  
-  const outputData = [];
-  const processedKeys = new Set();
-
-  // ⭐ THAY ĐỔI: Duyệt theo thứ tự của DMHH trước
-  for (const key of dmhhKeysInOrder) {
-    if (hangHoaCoData.has(key) && !processedKeys.has(key)) {
-      const hangHoa = hangHoaCoData.get(key);
-      const slTonDauKy = hangHoa.slDauKyGoc + hangHoa.slNhapTruocKy - hangHoa.slXuatTruocKy - hangHoa.slXuatSXTruocKy;
-      const gtTonDauKy = hangHoa.gtDauKyGoc + hangHoa.gtNhapTruocKy - hangHoa.gtXuatTruocKy - hangHoa.gtXuatSXTruocKy;
-      const slTonCuoiKy = slTonDauKy + hangHoa.slNhapTrongKy - hangHoa.slXuatTrongKy - hangHoa.slXuatSXTrongKy;
-      const gtTonCuoiKy = gtTonDauKy + hangHoa.gtNhapTrongKy - hangHoa.gtXuatTrongKy - hangHoa.gtXuatSXTrongKy;
-      
-      const itemData = { ...hangHoa, slTonDauKy, gtTonDauKy, slTonCuoiKy, gtTonCuoiKy };
-      outputData.push(outputColumns(itemData));
-      processedKeys.add(key);
-    }
-  }
-
-  // Thêm các mã hàng có phát sinh nhưng không có trong DMHH (nếu có)
-  for (const [key, hangHoa] of hangHoaCoData.entries()) {
-    if (!processedKeys.has(key)) {
-      const slTonDauKy = hangHoa.slDauKyGoc + hangHoa.slNhapTruocKy - hangHoa.slXuatTruocKy - hangHoa.slXuatSXTruocKy;
-      const gtTonDauKy = hangHoa.gtDauKyGoc + hangHoa.gtNhapTruocKy - hangHoa.gtXuatTruocKy - hangHoa.gtXuatSXTruocKy;
-      const slTonCuoiKy = slTonDauKy + hangHoa.slNhapTrongKy - hangHoa.slXuatTrongKy - hangHoa.slXuatSXTrongKy;
-      const gtTonCuoiKy = gtTonDauKy + hangHoa.gtNhapTrongKy - hangHoa.gtXuatTrongKy - hangHoa.gtXuatSXTrongKy;
-      
-      const itemData = { ...hangHoa, slTonDauKy, gtTonDauKy, slTonCuoiKy, gtTonCuoiKy };
-      outputData.push(outputColumns(itemData));
-    }
-  }
-  
-  if (outputData.length > 0) {
-    sheetNXT.getRange(dataStartRow, 1, outputData.length, numCols).setValues(outputData);
-    
-    if (numberFormatDef) {
-      const { format, range } = numberFormatDef;
-      sheetNXT.getRange(dataStartRow, range.col, outputData.length, range.count).setNumberFormat(format);
-    } else {
-      const slColumns = [6, 8, 10, 12, 14];
-      for (const col of slColumns) sheetNXT.getRange(dataStartRow, col, outputData.length, 1).setNumberFormat(formatSL);
-      const tienColumns = [7, 9, 11, 13, 15];
-      for (const col of tienColumns) sheetNXT.getRange(dataStartRow, col, outputData.length, 1).setNumberFormat(formatGT);
-    }
-    
-    const headerRange = sheetNXT.getRange(4, 1, headerRows, numCols);
-    headerRange.setBackground('#4472C4')
-             .setFontColor('white')
-             .setFontWeight('bold')
-             .setHorizontalAlignment('center')
-             .setVerticalAlignment('middle')
-             .setWrap(true);
-             
-    const allDataRange = sheetNXT.getRange(4, 1, outputData.length + headerRows, numCols);
-    allDataRange.setBorder(true, true, true, true, true, true);
-  }
-}
-/**
- * HÀM PHỤ: Cache cấu trúc phân cấp tài khoản để tăng hiệu suất
- */
-function getCachedAccountHierarchy() {
-  try {
-    const cache = CacheService.getScriptCache();
-    const CACHE_KEY = 'ACCOUNT_HIERARCHY_CACHE';
-    
-    const cachedData = cache.get(CACHE_KEY);
-    if (cachedData != null) {
-      console.log('✅ Loaded account hierarchy from CACHE.');
-      return JSON.parse(cachedData);
-    }
-    
-    return null;
-  } catch (e) {
-    console.error('Lỗi khi đọc cache phân cấp tài khoản:', e.toString());
-    return null;
-  }
-}
-
-/**
- * HÀM PHỤ: Lưu cấu trúc phân cấp tài khoản vào cache
- */
-function cacheAccountHierarchy(hierarchy) {
-  try {
-    const cache = CacheService.getScriptCache();
-    const CACHE_KEY = 'ACCOUNT_HIERARCHY_CACHE';
-    
-    // Cache trong 30 phút (1800 giây)
-    cache.put(CACHE_KEY, JSON.stringify(hierarchy), 1800);
-    console.log('✅ Account hierarchy cached for 30 minutes.');
-  } catch (e) {
-    console.error('Lỗi khi cache phân cấp tài khoản:', e.toString());
-  }
-}
-
-/**
- * HÀM PHỤ: Xóa cache phân cấp tài khoản
- */
-function clearAccountHierarchyCache() {
-  try {
-    CacheService.getScriptCache().remove('ACCOUNT_HIERARCHY_CACHE');
-    console.log('🧹 Account hierarchy cache cleared.');
-  } catch (e) {
-    console.error('Lỗi khi xóa cache phân cấp tài khoản:', e.toString());
-  }
-}
-
-/**
- * HÀM PHỤ: Tối ưu hóa việc tìm kiếm tài khoản con với index
- */
-function buildAccountIndex(taiKhoanList) {
-  const accountIndex = new Map();
-  
-  taiKhoanList.forEach(tk => {
-    // Tạo index cho tất cả các pattern có thể
-    for (let i = 1; i <= tk.ma.length; i++) {
-      const pattern = tk.ma.substring(0, i);
-      if (!accountIndex.has(pattern)) {
-        accountIndex.set(pattern, []);
-      }
-      accountIndex.get(pattern).push(tk);
-    }
-  });
-  
-  return accountIndex;
-}
-
-/**
- * HÀM PHỤ: Tìm tài khoản con sử dụng index (tối ưu hiệu suất)
- */
-function findChildAccountsOptimized(parentAccount, accountIndex) {
-  const children = [];
-  const parentPattern = parentAccount;
-  
-  // Sử dụng index để tìm kiếm nhanh
-  if (accountIndex.has(parentPattern)) {
-    const potentialChildren = accountIndex.get(parentPattern);
-    
-    potentialChildren.forEach(acc => {
-      if (acc.ma !== parentAccount && isChildAccount(parentAccount, acc.ma)) {
-        children.push(acc);
-      }
-    });
-  }
-  
-  return children;
-}
-
-/**
- * HÀM PHỤ: Kiểm tra xem có cần tổng hợp dữ liệu không
- */
-function needsAggregation(parentAccount, childAccounts) {
-  return childAccounts.length > 0;
-}
-
-/**
- * HÀM PHỤ: Tạo tiêu đề báo cáo với thông tin tổng hợp
- */
-function createReportTitle(parentAccount, parentInfo, childAccounts) {
-  let title = `SỔ CHI TIẾT TÀI KHOẢN: ${parentAccount} - ${parentInfo.ten}`;
-  
-  if (childAccounts.length > 0) {
-    const childCodes = childAccounts.map(child => child.ma).join(', ');
-    title += ` (Tổng hợp từ: ${childCodes})`;
-  }
-  
-  return title;
-}
-
-
-
-/**
- * HÀM PHỤ: Xử lý giao dịch theo batch để tối ưu hiệu suất
- */
-function processTransactionsInBatches(transactions, batchSize = 100) {
-  const results = [];
-  
-  for (let i = 0; i < transactions.length; i += batchSize) {
-    const batch = transactions.slice(i, i + batchSize);
-    // Xử lý batch này
-    batch.forEach(trans => {
-      // Xử lý từng giao dịch
-      results.push(trans);
-    });
-  }
-  
-  return results;
-}
-
-/**
- * HÀM PHỤ: Xử lý trường hợp đặc biệt - tài khoản có giao dịch nội bộ (SỬA LẠI)
- */
-function handleInternalTransactions(transactions, parentAccount, childAccounts) {
-  // Lọc bỏ giao dịch nội bộ giữa tài khoản cha và con để tránh tính trùng lặp
-  return transactions.filter(trans => {
-    const isInternalNo = isAccountInHierarchy(trans.TK_NO, parentAccount, childAccounts);
-    const isInternalCo = isAccountInHierarchy(trans.TK_CO, parentAccount, childAccounts);
-    
-    // Nếu cả TK Nợ và TK Có đều thuộc hệ thống tài khoản cha-con, đây là giao dịch nội bộ
-    if (isInternalNo && isInternalCo) {
-      console.log(`⚠️ Bỏ qua giao dịch nội bộ: ${trans.TK_NO} -> ${trans.TK_CO} (${trans.SO_TIEN})`);
-      return false; // Bỏ qua giao dịch nội bộ
-    }
-    
-    return true;
-  });
-}
-
-/**
- * HÀM PHỤ: Tạo báo cáo chi tiết cho từng tài khoản con (tùy chọn)
- */
-function createDetailedChildReport(childAccount, transactions, ngayBatDau, ngayKetThuc) {
-  const childTransactions = transactions.filter(trans => {
-    const ngayGiaoDich = new Date(trans.NGAY_HT);
-    const inPeriod = ngayGiaoDich >= ngayBatDau && ngayGiaoDich <= ngayKetThuc;
-    
-    return inPeriod && (trans.TK_NO === childAccount.ma || trans.TK_CO === childAccount.ma);
-  });
-  
-  return childTransactions.map(trans => {
-    const phatSinhNo = (trans.TK_NO === childAccount.ma) ? trans.SO_TIEN : 0;
-    const phatSinhCo = (trans.TK_CO === childAccount.ma) ? trans.SO_TIEN : 0;
-    const tkDoiUng = (trans.TK_NO === childAccount.ma) ? trans.TK_CO : trans.TK_NO;
-    
-    let dienGiai = trans.DIEN_GIAI || '';
-    const tenHang = trans.TEN_HANG?.toString().trim();
-    const quyCach = trans.QUY_CACH?.toString().trim();
-    if (tenHang) dienGiai += ` - ${tenHang}`;
-    if (quyCach) dienGiai += ` (${quyCach})`;
-    
-    return {
-      ngay: new Date(trans.NGAY_HT),
-      soCT: trans.SO_CT || '',
-      ngayCT: trans.NGAY_CT ? new Date(trans.NGAY_CT) : '',
-      dienGiai: dienGiai,
-      tkDoiUng: tkDoiUng,
-      phatSinhNo: phatSinhNo,
-      phatSinhCo: phatSinhCo
-    };
-  });
-}
-
-/**
- * HÀM PHỤ: Tối ưu hóa việc xử lý giao dịch lớn
- */
-function optimizeLargeTransactionProcessing(transactions, batchSize = 500) {
-  if (transactions.length <= batchSize) {
-    return transactions; // Không cần xử lý batch
-  }
-  
-  console.log(`⚡ Tối ưu hóa xử lý ${transactions.length} giao dịch với batch size ${batchSize}`);
-  
-  const optimizedTransactions = [];
-  for (let i = 0; i < transactions.length; i += batchSize) {
-    const batch = transactions.slice(i, i + batchSize);
-    optimizedTransactions.push(...batch);
-    
-    // Thêm delay nhỏ để tránh quá tải
-    if (i + batchSize < transactions.length) {
-      Utilities.sleep(10);
-    }
-  }
-  
-  return optimizedTransactions;
-}
-
-/**
- * HÀM PHỤ: Tạo báo cáo tóm tắt quá trình xử lý
- */
-function createProcessingSummary(taiKhoanCanXem, childAccountsMap, processingTime) {
-  console.log('\n📊 BÁO CÁO TÓM TẮT QUÁ TRÌNH XỬ LÝ:');
-  console.log(`⏱️  Tổng thời gian xử lý: ${processingTime}ms`);
-  console.log(`📋 Số lượng tài khoản được xử lý: ${taiKhoanCanXem.length}`);
-  
-  let totalChildAccounts = 0;
-  taiKhoanCanXem.forEach(tk => {
-    const childAccounts = childAccountsMap.get(tk) || [];
-    totalChildAccounts += childAccounts.length;
-    
-    if (childAccounts.length > 0) {
-      console.log(`   - TK ${tk}: Tổng hợp từ ${childAccounts.length} tài khoản con`);
-    } else {
-      console.log(`   - TK ${tk}: Không có tài khoản con`);
-    }
-  });
-  
-  console.log(`📈 Tổng số tài khoản con được xử lý: ${totalChildAccounts}`);
-  console.log('✅ Hoàn thành xử lý!\n');
-}
-
-/**
- * HÀM MỚI: Tạo báo cáo sổ chi tiết tài khoản với xử lý thuế từ TK_THUE
- * Phiên bản cải tiến với logic xử lý thuế mới và tổng hợp theo cấp tài khoản
- */
-function taosochitiet(startDateStr, endDateStr, taiKhoanCanXem) {
-  const startTime = Date.now();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
-
-  try {
-    // Kiểm tra tham số đầu vào
-    const validationErrors = validateInputData(startDateStr, endDateStr, taiKhoanCanXem);
-    if (validationErrors.length > 0) {
-      throw new Error('Lỗi validation: ' + validationErrors.join(', '));
-    }
-
-    const ngayBatDau = new Date(startDateStr);
-    ngayBatDau.setHours(0, 0, 0, 0);
-    const ngayKetThuc = new Date(endDateStr);
-    ngayKetThuc.setHours(23, 59, 59, 999);
-    
-    console.log(`📅 Tạo báo cáo sổ chi tiết mới cho ${taiKhoanCanXem.length} tài khoản từ ${ngayBatDau.toLocaleDateString('vi-VN')} đến ${ngayKetThuc.toLocaleDateString('vi-VN')}`);
-
-    // Kiểm tra sheet báo cáo
-    const sheetSoCT = ss.getSheetByName('SO_CT');
-    if (!sheetSoCT) throw new Error('Không tìm thấy sheet báo cáo "SO_CT"');
-
-    ss.toast('Bắt đầu xử lý...', 'Sổ Chi Tiết Mới', -1);
-    ss.toast('Đang đọc dữ liệu từ DMTK và các sheet DL_...', 'Bước 1/5');
-
-    // Đọc dữ liệu DMTK
-    const sheetDMTK = ss.getSheetByName('DMTK');
-    if (!sheetDMTK) throw new Error('Không tìm thấy sheet "DMTK"');
-    const dataDMTK = sheetDMTK.getDataRange().getValues();
-    
-    // Xây dựng map tài khoản và cấu trúc phân cấp
-    const taiKhoanMap = new Map();
-    const taiKhoanList = [];
-    
-    dataDMTK.slice(1).forEach(row => {
-      const maTK = row[0]?.toString().trim();
-      if (maTK) {
-        const taiKhoanInfo = { 
-          ma: maTK,
-          ten: row[1]?.toString().trim(), 
-          loai: parseInt(row[2]) || 0, 
-          duNoGoc: parseFloat(row[3]) || 0, 
-          duCoGoc: parseFloat(row[4]) || 0 
-        };
-        taiKhoanMap.set(maTK, taiKhoanInfo);
-        taiKhoanList.push(taiKhoanInfo);
-      }
-    });
-
-    // Xây dựng cấu trúc phân cấp tài khoản
-    let accountHierarchy = getCachedAccountHierarchy();
-    if (!accountHierarchy) {
-      accountHierarchy = buildAccountHierarchy(taiKhoanList);
-      cacheAccountHierarchy(accountHierarchy);
-    }
-    
-    // Xây dựng index tài khoản để tối ưu hiệu suất tìm kiếm
-    const accountIndex = buildAccountIndex(taiKhoanList);
-
-    ss.toast('Đang đọc dữ liệu phát sinh...', 'Bước 2/5');
-    
-    // Đọc dữ liệu phát sinh bao gồm TK_THUE
-    const allTransactionsRaw = readDataFromPrefixedSheetsWithThue(ss, 'DL_', ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'TK_THUE', 'THUE_VAT']);
-    
-    ss.toast('Đang xử lý phát sinh thuế...', 'Bước 3/5');
-    
-    // Xử lý phát sinh thuế từ TK_THUE
-    const allTransactions = xuLyPhatSinhThueTuTK_THUE(allTransactionsRaw);
-    
-    // Tối ưu hóa xử lý giao dịch lớn
-    const optimizedTransactions = optimizeLargeTransactionProcessing(allTransactions);
-
-    ss.toast('Đang tính toán số dư và phát sinh...', 'Bước 4/5');
-    const outputData = [];
-    const headers = ['Ngày Ghi Sổ', 'Số Chứng Từ', 'Ngày Chứng Từ', 'Diễn Giải', 'TK Đối Ứng', 'Phát Sinh Nợ', 'Phát Sinh Có', 'Dư Nợ Cuối Kỳ', 'Dư Có Cuối Kỳ'];
-
-    for (const tk of taiKhoanCanXem) {
-      if (!taiKhoanMap.has(tk)) continue;
-      const tkInfo = taiKhoanMap.get(tk);
-
-      // Tìm tài khoản con của tài khoản hiện tại
-      const childAccounts = findChildAccountsOptimized(tk, accountIndex);
-      
-      // Tạo tiêu đề báo cáo với thông tin tổng hợp
-      const titleRow = createReportTitle(tk, tkInfo, childAccounts);
-      
-      outputData.push([titleRow, '', '', '', '', '', '', '', '']);
-      outputData.push(headers);
-
-      // Tính số dư đầu kỳ động
-      let [duNoDauKy, duCoDauKy] = tinhSoDuDauKyDongChoTaiKhoan(tk, childAccounts, optimizedTransactions, ngayBatDau, taiKhoanMap);
-      
-      outputData.push(['', '', '', 'Số dư đầu kỳ', '', '', '', duNoDauKy, duCoDauKy]);
-
-      let duNoCuoiKy = duNoDauKy;
-      let duCoCuoiKy = duCoDauKy;
-      let tongPhatSinhNo = 0;
-      let tongPhatSinhCo = 0;
-
-      // Lấy giao dịch trong kỳ báo cáo (bao gồm tài khoản cha và con)
-      const transactionsInPeriod = getTransactionsForParentAccount(tk, childAccounts, optimizedTransactions, ngayBatDau, ngayKetThuc);
-
-      transactionsInPeriod.forEach(trans => {
-        const phatSinhNo = (trans.TK_NO === tk) ? trans.SO_TIEN : 0;
-        const phatSinhCo = (trans.TK_CO === tk) ? trans.SO_TIEN : 0;
-        const tkDoiUng = (trans.TK_NO === tk) ? trans.TK_CO : trans.TK_NO;
-
-        // Tính toán phát sinh tổng hợp từ tài khoản cha và con
-        const [totalPhatSinhNo, totalPhatSinhCo] = calculateAggregatedPhatSinh(trans, tk, childAccounts);
-
-        tongPhatSinhNo += totalPhatSinhNo;
-        tongPhatSinhCo += totalPhatSinhCo;
-
-        let finalDienGiai = trans.DIEN_GIAI || '';
-        const tenHang = trans.TEN_HANG?.toString().trim();
-        const quyCach = trans.QUY_CACH?.toString().trim();
-        if (tenHang) finalDienGiai += ` - ${tenHang}`;
-        if (quyCach) finalDienGiai += ` (${quyCach})`;
-
-        // Cập nhật số dư cuối kỳ
-        let duNoMoi = duNoCuoiKy + totalPhatSinhNo;
-        let duCoMoi = duCoCuoiKy + totalPhatSinhCo;
-        [duNoCuoiKy, duCoCuoiKy] = tinhSoDu(duNoMoi, duCoMoi);
-
-        outputData.push([ 
-          new Date(trans.NGAY_HT), 
-          trans.SO_CT || '', 
-          trans.NGAY_CT ? new Date(trans.NGAY_CT) : '', 
-          finalDienGiai, 
-          tkDoiUng, 
-          totalPhatSinhNo, 
-          totalPhatSinhCo, 
-          duNoCuoiKy, 
-          duCoCuoiKy 
-        ]);
+      let html = '';
+      accounts.forEach(acc => {
+        const isChecked = selectedWriteAccounts.includes(acc.ma);
+        html += `
+          <label class="account-item" for="write-acc-${acc.ma}">
+            <input type="checkbox" id="write-acc-${acc.ma}" value="${acc.ma}" ${isChecked ? 'checked' : ''} onchange="updateWriteSelection()">
+            <div class="account-info">
+              <div class="account-code">${acc.ma}</div>
+              <div class="account-name">${acc.ten}</div>
+            </div>
+          </label>`;
       });
-
-      outputData.push(['', '', '', 'Cộng phát sinh trong kỳ', '', tongPhatSinhNo, tongPhatSinhCo, '', '']);
-      outputData.push(['', '', '', 'Số dư cuối kỳ', '', '', '', duNoCuoiKy, duCoCuoiKy]);
-      outputData.push(['', '', '', '', '', '', '', '', '']);
+      listElement.innerHTML = html;
     }
 
-    ss.toast('Đang ghi dữ liệu ra báo cáo...', 'Bước 5/5');
-    if(sheetSoCT.getLastRow() >= 1) {
-        sheetSoCT.clear();
+    function filterAccounts() {
+      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+      document.querySelector('.clear-search').style.display = searchTerm ? 'block' : 'none';
+      const filtered = allAccounts.filter(acc => acc.ma.toLowerCase().includes(searchTerm) || acc.ten.toLowerCase().includes(searchTerm));
+      renderAccountList(filtered);
     }
 
-    if (outputData.length > 0) {
-      sheetSoCT.getRange(1, 1, outputData.length, 9).setValues(outputData);
+    function filterWriteAccounts() {
+      const searchTerm = document.getElementById('writeSearchInput').value.toLowerCase();
+      document.querySelectorAll('.clear-search')[1].style.display = searchTerm ? 'block' : 'none';
+      const filtered = allAccounts.filter(acc => acc.ma.toLowerCase().includes(searchTerm) || acc.ten.toLowerCase().includes(searchTerm));
+      renderWriteAccountsList(filtered);
     }
 
-    ss.toast('Đang định dạng báo cáo...', 'Hoàn thiện');
-    for (let i = 0; i < outputData.length; i++) {
-        const currentRow = i + 1;
-        const rowData = outputData[i];
-        const dienGiai = rowData[3]?.toString() || '';
-
-        if (dienGiai.startsWith('SỔ CHI TIẾT TÀI KHOẢN')) {
-            sheetSoCT.getRange(currentRow, 1, 1, 9).merge().setFontWeight('bold').setBackground('#c9daf8').setHorizontalAlignment('center');
-        } else if (rowData[0] === 'Ngày Ghi Sổ') {
-            sheetSoCT.getRange(currentRow, 1, 1, 9).setFontWeight('bold').setBackground('#4a86e8').setFontColor('white');
-        } else if (dienGiai.includes('Số dư đầu kỳ') || dienGiai.includes('Cộng phát sinh') || dienGiai.includes('Số dư cuối kỳ')) {
-             sheetSoCT.getRange(currentRow, 4, 1, 6).setFontWeight('bold');
-        }
+    function clearSearch() {
+      document.getElementById('searchInput').value = '';
+      filterAccounts();
     }
 
-    ss.toast('Hoàn thành!', 'Thành công', 5);
+    function clearWriteSearch() {
+      document.getElementById('writeSearchInput').value = '';
+      filterWriteAccounts();
+    }
+
+    function selectAllAccounts() {
+      document.querySelectorAll('#accountList input[type="checkbox"]').forEach(cb => cb.checked = true);
+      updateSelection();
+    }
+
+    function deselectAllAccounts() {
+      document.querySelectorAll('#accountList input[type="checkbox"]').forEach(cb => cb.checked = false);
+      updateSelection();
+    }
+
+    function selectAllWriteAccounts() {
+      document.querySelectorAll('#writeAccountList input[type="checkbox"]').forEach(cb => cb.checked = true);
+      updateWriteSelection();
+    }
+
+    function deselectAllWriteAccounts() {
+      document.querySelectorAll('#writeAccountList input[type="checkbox"]').forEach(cb => cb.checked = false);
+      updateWriteSelection();
+    }
+
+    function updateSelection() {
+      selectedAccounts = Array.from(document.querySelectorAll('#accountList input:checked')).map(cb => cb.value);
+      updateStatus();
+    }
+
+    function updateStatus() {
+      const statusElement = document.getElementById('status');
+      statusElement.style.display = selectedAccounts.length > 0 ? 'block' : 'none';
+      statusElement.textContent = `Đã chọn: ${selectedAccounts.length} tài khoản`;
+      google.script.run.saveSelectedAccounts(selectedAccounts);
+    }
+
+    function updateWriteSelection() {
+      selectedWriteAccounts = Array.from(document.querySelectorAll('#writeAccountList input:checked')).map(cb => cb.value);
+      updateWriteStatus();
+    }
+
+    function updateWriteStatus() {
+      const statusElement = document.getElementById('writeStatus');
+      statusElement.style.display = selectedWriteAccounts.length > 0 ? 'block' : 'none';
+      statusElement.textContent = `Đã chọn: ${selectedWriteAccounts.length} tài khoản`;
+    }
+
+    function writeSelectedAccounts() {
+      if (selectedWriteAccounts.length === 0) return alert('Vui lòng chọn ít nhất một tài khoản');
+      google.script.run.withSuccessHandler(result => {
+        if (result.success) {
+          showTempStatus('writeStatus', `✅ Đã ghi ${result.count} tài khoản`, 'success');
+          deselectAllWriteAccounts();
+        } else alert('Lỗi: ' + result.error);
+      }).withFailureHandler(err => alert('Lỗi hệ thống: ' + err)).ghiNhieuTaiKhoanVaoSheet(selectedWriteAccounts);
+    }
+
+    function createCDPS() {
+      const startDate = document.getElementById('startDate').value;
+      const endDate = document.getElementById('endDate').value;
+      if (!startDate || !endDate) return alert('Vui lòng chọn kỳ báo cáo');
+      saveReportDates(startDate, endDate);
+      showTempStatus('status', `🔄 Đang tạo CĐPS...`, 'loading');
+      google.script.run.withSuccessHandler(() => showTempStatus('status', '✅ Đã tạo CĐPS', 'success')).withFailureHandler(err => showTempStatus('status', `❌ Lỗi: ${err}`, 'error')).taoCanDoiPhatSinh(startDate, endDate);
+    }
+
+    function createSoChiTiet() {
+      if (selectedAccounts.length === 0) return alert('Vui lòng chọn ít nhất một tài khoản');
+      const startDate = document.getElementById('startDate').value;
+      const endDate = document.getElementById('endDate').value;
+      if (!startDate || !endDate) return alert('Vui lòng chọn kỳ báo cáo');
+      saveReportDates(startDate, endDate);
+      showTempStatus('status', `🔄 Đang tạo Sổ Chi Tiết...`, 'loading');
+      google.script.run.withSuccessHandler(() => showTempStatus('status', '✅ Đã tạo Sổ Chi Tiết', 'success')).withFailureHandler(err => showTempStatus('status', `❌ Lỗi: ${err}`, 'error')).taosochitiet(startDate, endDate, selectedAccounts);
+    }
     
-    // Tạo báo cáo tóm tắt quá trình xử lý
-    const totalProcessingTime = Date.now() - startTime;
-    const childAccountsMap = new Map();
-    taiKhoanCanXem.forEach(tk => {
-      const childAccounts = findChildAccountsOptimized(tk, accountIndex);
-      childAccountsMap.set(tk, childAccounts);
-    });
-    createProcessingSummary(taiKhoanCanXem, childAccountsMap, totalProcessingTime);
-    
-  } catch (e) {
-    console.error("LỖI TẠO SỔ CHI TIẾT MỚI: " + e.toString() + e.stack);
-    throw new Error('Lỗi khi tạo báo cáo: ' + e.toString());
-  }
-}
-
-/**
- * HÀM PHỤ: Đọc dữ liệu từ các sheet có prefix bao gồm cột TK_THUE
- */
-function readDataFromPrefixedSheetsWithThue(spreadsheet, sheetPrefix, requiredColumns) {
-  const allSheets = spreadsheet.getSheets();
-  const dataSheets = allSheets.filter(sheet => sheet.getName().startsWith(sheetPrefix));
-  
-  if (dataSheets.length === 0) {
-    console.log(`Không tìm thấy sheet nào bắt đầu với "${sheetPrefix}"`);
-    return [];
-  }
-
-  const combinedData = [];
-  for (const sheet of dataSheets) {
-    const sheetData = processSingleSheetWithThue(sheet, requiredColumns);
-    if (sheetData.length > 0) {
-      combinedData.push(...sheetData);
-    }
-  }
-  return combinedData;
-}
-
-/**
- * HÀM PHỤ: Xử lý dữ liệu cho một sheet duy nhất bao gồm TK_THUE
- */
-function processSingleSheetWithThue(sheet, requiredColumns) {
-  try {
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return [];
-
-    const headerRow = data[0].map(h => h.toString().trim().toUpperCase());
-    
-    // Tìm vị trí của cột NGAY_HT
-    const colIndexNgayHT = headerRow.indexOf('NGAY_HT');
-
-    // Kiểm tra xem có đủ các cột bắt buộc không
-    const missingCols = requiredColumns.filter(col => !headerRow.includes(col));
-    if (missingCols.length > 0) {
-      console.error(`Sheet "${sheet.getName()}" thiếu các cột bắt buộc: ${missingCols.join(', ')}`);
-      return [];
+    function saveReportDates(startDate, endDate) {
+      google.script.run.saveReportDates(startDate, endDate);
     }
 
-    const processedData = [];
-    // Lặp từ dòng 2 (index = 1) để bỏ qua tiêu đề
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      
-      // Kiểm tra điều kiện NGAY_HT trước tiên
-      const ngayHTValue = (colIndexNgayHT !== -1) ? row[colIndexNgayHT] : null;
-      if (!ngayHTValue) {
-        continue; // Bỏ qua dòng này và chuyển sang dòng tiếp theo
+    function renderHangHoaList(hangHoaToRender) {
+      const listElement = document.getElementById('hanghoaList');
+      const loadingElement = document.getElementById('loadingHangHoa');
+      if (loadingElement) loadingElement.style.display = 'none';
+      if (!hangHoaToRender || hangHoaToRender.length === 0) {
+        listElement.innerHTML = '<div style="padding: 20px; text-align: center; color: #5f6368;">Không tìm thấy hàng hóa.</div>';
+        return;
       }
-      
-      // Thêm validation dữ liệu
-      if (!isValidRowDataWithThue(row, headerRow, requiredColumns)) {
-        console.warn(`Sheet "${sheet.getName()}", dòng ${i + 1}: Dữ liệu không hợp lệ, bỏ qua`);
-        continue;
-      }
-      
-      const rowData = {
-        sheet: sheet.getName(),
-        row: i + 1
-      };
-      
-      headerRow.forEach((header, index) => {
-        rowData[header] = row[index];
+      let html = '';
+      hangHoaToRender.forEach(item => {
+        const isChecked = selectedHangHoaIds.has(item.uniqueId) ? 'checked' : '';
+        html += `
+          <label class="hanghoa-item" for="hanghoa-${item.uniqueId}">
+            <input type="checkbox" id="hanghoa-${item.uniqueId}" class="hanghoa-checkbox" onchange="toggleHangHoaSelection('${item.uniqueId}')" ${isChecked}>
+            <div class="hanghoa-info">
+              <div class="hanghoa-name">${item.tenHang}</div>
+              <div class="hanghoa-code"><span class="ma-kho">${item.maKho}</span>${item.maHang}</div>
+              <div class="hanghoa-details">Quy cách: ${item.quyCach} | ĐVT: ${item.dvt}</div>
+            </div>
+          </label>`;
       });
-      
-      processedData.push(rowData);
+      listElement.innerHTML = html;
     }
-    return processedData;
-  } catch (error) {
-    console.error(`Lỗi xử lý sheet "${sheet.getName()}": ${error.toString()}`);
-    return [];
-  }
-}
 
-/**
- * HÀM PHỤ: Kiểm tra tính hợp lệ của dữ liệu dòng bao gồm TK_THUE
- */
-function isValidRowDataWithThue(row, headerRow, requiredColumns) {
-  try {
-    for (const requiredCol of requiredColumns) {
-      const colIndex = headerRow.indexOf(requiredCol);
-      if (colIndex === -1) continue;
-      
-      const value = row[colIndex];
-      
-      // Đối với TK_THUE và THUE_VAT, cho phép rỗng (không bắt buộc)
-      if (requiredCol === 'TK_THUE' || requiredCol === 'THUE_VAT') {
-        continue;
-      }
-      
-      if (value === null || value === undefined || value === '') {
-        return false;
-      }
-      
-      // Kiểm tra đặc biệt cho các cột số
-      if (requiredCol === 'SO_TIEN') {
-        const numValue = parseFloat(value);
-        if (isNaN(numValue) || numValue <= 0) {
-          return false;
-        }
-      }
-      
-      // Đối với THUE_VAT, nếu có giá trị thì phải >= 0
-      if (requiredCol === 'THUE_VAT' && value !== null && value !== undefined && value !== '') {
-        const numValue = parseFloat(value);
-        if (isNaN(numValue) || numValue < 0) {
-          return false;
-        }
-      }
+    function toggleHangHoaSelection(uniqueId) {
+      if (selectedHangHoaIds.has(uniqueId)) selectedHangHoaIds.delete(uniqueId);
+      else selectedHangHoaIds.add(uniqueId);
+      updateHangHoaStatus();
     }
-    return true;
-  } catch (error) {
-    console.error('Lỗi kiểm tra dữ liệu:', error.toString());
-    return false;
-  }
-}
 
-/**
- * HÀM PHỤ: Xử lý phát sinh thuế từ cột TK_THUE
- */
-function xuLyPhatSinhThueTuTK_THUE(transactionsRaw) {
-  const finalTransactions = [];
-  
-  for (const trans of transactionsRaw) {
-    const soTien = parseFloat(trans.SO_TIEN) || 0;
-    const thueVAT = parseFloat(trans.THUE_VAT) || 0;
-    const tkNo = trans.TK_NO?.toString().trim();
-    const tkCo = trans.TK_CO?.toString().trim();
-    const tkThue = trans.TK_THUE?.toString().trim();
+    function updateHangHoaStatus() {
+      const statusElement = document.getElementById('hanghoaStatus');
+      statusElement.style.display = selectedHangHoaIds.size > 0 ? 'block' : 'none';
+      statusElement.textContent = `Đã chọn: ${selectedHangHoaIds.size} hàng hóa`;
+    }
+
+    function filterHangHoa() {
+      const term = document.getElementById('hanghoaSearchInput').value.toLowerCase();
+      document.getElementById('clearHangHoaSearch').style.display = term ? 'block' : 'none';
+      const filtered = allHangHoa.filter(item => 
+        (item.maKho && item.maKho.toLowerCase().includes(term)) ||
+        (item.maHang && item.maHang.toLowerCase().includes(term)) ||
+        (item.tenHang && item.tenHang.toLowerCase().includes(term))
+      );
+      renderHangHoaList(filtered);
+    }
+
+    function clearHangHoaSearch() {
+      document.getElementById('hanghoaSearchInput').value = '';
+      filterHangHoa();
+    }
     
-    // Thêm TẤT CẢ giao dịch gốc nếu có đủ điều kiện cơ bản
-    // Điều kiện: có ngày ghi sổ, tài khoản nợ, tài khoản có, số tiền > 0
-    if (trans.NGAY_HT && tkNo && tkCo && soTien > 0) {
-      finalTransactions.push({ ...trans, SO_TIEN: soTien });
+    function applyHangHoaSelection() {
+      if (selectedHangHoaIds.size === 0) return alert('Vui lòng chọn ít nhất một hàng hóa');
+      const selectedItems = Array.from(selectedHangHoaIds).map(id => allHangHoa.find(item => item.uniqueId === id)).filter(Boolean);
+      google.script.run.withSuccessHandler(result => {
+        if (result.success) {
+          showTempStatus('hanghoaStatus', `✅ Đã ghi ${result.count} hàng hóa`, 'success');
+          deselectAllHangHoa();
+        } else alert('Lỗi: ' + result.error);
+      }).withFailureHandler(err => alert('Lỗi hệ thống: ' + err)).ghiHangHoaVaoSheet(selectedItems);
     }
 
-    // Xử lý phát sinh thuế từ TK_THUE (nếu có)
-    // Chỉ tạo bút toán thuế khi có thuế VAT > 0 và có TK_THUE
-    if (thueVAT > 0 && tkThue) {
-      const phatSinhThue = taoPhatSinhThue(tkThue, tkNo, tkCo, thueVAT, trans);
-      if (phatSinhThue) {
-        finalTransactions.push(phatSinhThue);
+    function selectAllHangHoa() {
+      allHangHoa.forEach(item => selectedHangHoaIds.add(item.uniqueId));
+      renderHangHoaList(allHangHoa); // Re-render to check all boxes
+      updateHangHoaStatus();
+    }
+
+    function deselectAllHangHoa() {
+      selectedHangHoaIds.clear();
+      renderHangHoaList(allHangHoa); // Re-render to uncheck all boxes
+      updateHangHoaStatus();
+    }
+
+    function createNhapXuatTon(reportType = 'ALL') {
+      const startDate = document.getElementById('hanghoaStartDate').value;
+      const endDate = document.getElementById('hanghoaEndDate').value;
+      if (!startDate || !endDate) return alert('Vui lòng chọn kỳ báo cáo');
+      
+      saveReportDates(startDate, endDate);
+      
+      let selectedItems = (selectedHangHoaIds.size > 0) 
+        ? Array.from(selectedHangHoaIds).map(id => allHangHoa.find(item => item.uniqueId === id)).filter(Boolean)
+        : allHangHoa;
+      
+      if (selectedItems.length === 0) return alert('Không có hàng hóa nào để tạo báo cáo. Vui lòng chọn hoặc đảm bảo có dữ liệu trong DMHH.');
+      
+      showTempStatus('hanghoaStatus', `🔄 Đang tạo NXT cho ${selectedItems.length} hàng hóa...`, 'loading');
+      
+      google.script.run.withSuccessHandler(() => {
+        showTempStatus('hanghoaStatus', `✅ Đã tạo báo cáo NXT`, 'success');
+      }).withFailureHandler(error => {
+        showTempStatus('hanghoaStatus', `❌ Lỗi: ${error}`, 'error');
+      }).taoNhapXuatTonFromSidebar(startDate, endDate, selectedItems, reportType);
+    }
+
+    // ⭐⭐⭐ FIX: Updated showTempStatus function ⭐⭐⭐
+    function showTempStatus(elementId, message, type) {
+      const statusElement = document.getElementById(elementId);
+      
+      statusElement.textContent = message;
+      statusElement.style.display = 'block';
+
+      if (type === 'success') {
+        statusElement.style.background = '#e6f4ea'; 
+        statusElement.style.borderColor = '#34a853'; 
+        statusElement.style.color = '#137333';
+      } else if (type === 'error') {
+        statusElement.style.background = '#f8d7da'; 
+        statusElement.style.borderColor = '#dc3545'; 
+        statusElement.style.color = '#721c24';
+      } else { // loading
+        statusElement.style.background = '#fff3cd'; 
+        statusElement.style.borderColor = '#ffc107'; 
+        statusElement.style.color = '#856404';
+      }
+
+      if (type !== 'loading') {
+        setTimeout(() => {
+          // Reset styles to default
+          statusElement.style.background = 'white';
+          statusElement.style.borderColor = '#e8eaed';
+          statusElement.style.color = '#5f6368';
+          
+          // Update status with the correct selection count
+          if (elementId === 'hanghoaStatus') {
+            updateHangHoaStatus();
+          } else if (elementId === 'status') {
+            updateStatus();
+          } else if (elementId === 'writeStatus') {
+            updateWriteStatus();
+          }
+        }, 4000);
       }
     }
-  }
-  
-  return finalTransactions;
-}
 
-/**
- * HÀM PHỤ: Tạo bút toán thuế từ TK_THUE
- */
-function taoPhatSinhThue(tkThue, tkNo, tkCo, thueVAT, transGoc) {
-  // Kiểm tra tài khoản thuế và tạo bút toán tương ứng
-  if (tkThue === '1331' || tkThue === '1332') {
-    // Phát sinh NỢ tài khoản thuế, tài khoản đối ứng là TK_CO
-    return {
-      ...transGoc,
-      TK_NO: tkThue,
-      TK_CO: tkCo,
-      SO_TIEN: thueVAT,
-      DIEN_GIAI: `Thuế GTGT của ${transGoc.DIEN_GIAI || 'chứng từ ' + transGoc.SO_CT}`,
-      NGAY_HT: transGoc.NGAY_HT,
-      NGAY_CT: transGoc.NGAY_CT,
-      SO_CT: transGoc.SO_CT
+    window.onload = function() {
+      loadReportDates();
+      loadAccounts();
+      loadAllAccounts();
+      loadHangHoa();
     };
-  } else if (tkThue === '33311' || tkThue === '33312') {
-    // Phát sinh CÓ tài khoản thuế, tài khoản đối ứng là TK_NO
-    return {
-      ...transGoc,
-      TK_NO: tkNo,
-      TK_CO: tkThue,
-      SO_TIEN: thueVAT,
-      DIEN_GIAI: `Thuế GTGT của ${transGoc.DIEN_GIAI || 'chứng từ ' + transGoc.SO_CT}`,
-      NGAY_HT: transGoc.NGAY_HT,
-      NGAY_CT: transGoc.NGAY_CT,
-      SO_CT: transGoc.SO_CT
-    };
-  }
-  
-  // Nếu không phải tài khoản thuế đặc biệt, trả về null
-  return null;
-}
+  </script>
+</body>
+</html>
