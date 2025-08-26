@@ -224,14 +224,14 @@ function onEdit(e) {
 // CONFIG CỘT CHO TỪNG LOẠI BÁO CÁO
 const REPORT_COLUMN_CONFIGS = {
   CDPS: {
-    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'THUE_VAT', 'LOAI_CT'],
+    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'THUE_VAT', 'TK_THUE'],
     mapping: {
       'NGAY_HT': 'ngay',
       'TK_NO': 'tkNo', 
       'TK_CO': 'tkCo',
       'SO_TIEN': 'soTien',
       'THUE_VAT': 'thueVAT',
-      'LOAI_CT': 'loaiCT'
+      'TK_THUE': 'tkThue'
     }
   },
   NXT: {
@@ -540,30 +540,27 @@ function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
     return [soDuNoCuoi, soDuCoCuoi];
   }
   
-  // Hàm xử lý VAT
-  function xuLyVAT(tkNo, tkCo, tienVAT, phanLoai) {
-    if (!tienVAT || tienVAT <= 0) return [];
+  // Hàm xử lý VAT - Cập nhật để sử dụng TK_THUE
+  function xuLyVAT(tkNo, tkCo, tienVAT, tkThue) {
+    if (!tienVAT || tienVAT <= 0 || !tkThue) return [];
     
     const giaoDichVAT = [];
-    const tkNoStr = tkNo?.toString().trim() || '';
-    const tkCoStr = tkCo?.toString().trim() || '';
-    const laTKHQ = (phanLoai?.toString().trim().toUpperCase() === 'TKHQ');
+    const tkThueStr = tkThue?.toString().trim() || '';
     
-    if (tkNoStr && ['1', '2', '6', '8'].includes(tkNoStr.charAt(0))) {
-      const tkVATDauVao = tkNoStr.startsWith('211') ? '1332' : '1331';
+    // Xử lý thuế dựa trên TK_THUE cụ thể
+    if (tkThueStr === '1331' || tkThueStr === '1332') {
+      // Phát sinh NỢ tài khoản thuế, tài khoản đối ứng là TK_CO
       giaoDichVAT.push({
-        tkNo: tkVATDauVao,
+        tkNo: tkThueStr,
         tkCo: tkCo,
         soTien: tienVAT,
         loai: 'VAT_DAU_VAO'
       });
-    }
-    
-    if (tkCoStr && ['5', '7'].includes(tkCoStr.charAt(0))) {
-      const tkVATDauRa = laTKHQ ? '33312' : '33311';
+    } else if (tkThueStr === '33311' || tkThueStr === '33312') {
+      // Phát sinh CÓ tài khoản thuế, tài khoản đối ứng là TK_NO
       giaoDichVAT.push({
         tkNo: tkNo,
-        tkCo: tkVATDauRa,
+        tkCo: tkThueStr,
         soTien: tienVAT,
         loai: 'VAT_DAU_RA'
       });
@@ -675,7 +672,7 @@ function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
         tkCo: row.tkCo,
         soTien: row.soTien,
         thueVAT: row.thueVAT,
-        loaiCT: row.loaiCT
+        tkThue: row.tkThue
       });
     }
     
@@ -684,7 +681,7 @@ function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
     const tkCo = row.tkCo?.toString().trim();
     const tienHang = parseFloat(row.soTien) || 0;
     const tienVAT = parseFloat(row.thueVAT) || 0;
-    const phanLoai = row.loaiCT?.toString().trim();
+    const tkThue = row.tkThue?.toString().trim();
     
     const laGiaoDichTruocKy = ngayHachToan < startDate;
     const laGiaoDichTrongKy = ngayHachToan >= startDate && ngayHachToan <= endDate;
@@ -751,7 +748,7 @@ function taoCanDoiPhatSinh(ngayBatDau = null, ngayKetThuc = null) {
       }
       
       if (tienVAT > 0) {
-        const giaoDichVAT = xuLyVAT(tkNo, tkCo, tienVAT, phanLoai);
+        const giaoDichVAT = xuLyVAT(tkNo, tkCo, tienVAT, tkThue);
         
         for (const vatGD of giaoDichVAT) {
           if (vatGD.tkNo) {
@@ -1039,204 +1036,8 @@ function validateInputData(startDateStr, endDateStr, taiKhoanCanXem) {
   return errors;
 }
 
-/**
- * HÀM CHÍNH V2: Tạo báo cáo Sổ chi tiết, nhận tham số từ sidebar.
- * PHIÊN BẢN NÂNG CẤP: Hỗ trợ tổng hợp dữ liệu từ tài khoản con lên tài khoản cha
- */
-function taoSoChiTietTaiKhoan_V2(startDateStr, endDateStr, taiKhoanCanXem) {
-  const startTime = Date.now(); // Đo thời gian xử lý
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
 
-  try {
-    // Kiểm tra tham số đầu vào (SỬA LẠI)
-    const validationErrors = validateInputData(startDateStr, endDateStr, taiKhoanCanXem);
-    if (validationErrors.length > 0) {
-      throw new Error('Lỗi validation: ' + validationErrors.join(', '));
-    }
 
-    const ngayBatDau = new Date(startDateStr);
-    ngayBatDau.setHours(0, 0, 0, 0);
-    const ngayKetThuc = new Date(endDateStr);
-    ngayKetThuc.setHours(23, 59, 59, 999);
-    
-    console.log(`📅 Tạo báo cáo sổ chi tiết cho ${taiKhoanCanXem.length} tài khoản từ ${ngayBatDau.toLocaleDateString('vi-VN')} đến ${ngayKetThuc.toLocaleDateString('vi-VN')}`);
-
-    // Các bước còn lại giống hệt hàm cũ
-    const sheetSoCT = ss.getSheetByName('SO_CT');
-    if (!sheetSoCT) throw new Error('Không tìm thấy sheet báo cáo "SO_CT"');
-
-    ss.toast('Bắt đầu xử lý...', 'Sổ Chi Tiết', -1);
-    ss.toast('Đang đọc dữ liệu từ DMTK và các sheet DL_...', 'Bước 1/4');
-
-    const sheetDMTK = ss.getSheetByName('DMTK');
-    if (!sheetDMTK) throw new Error('Không tìm thấy sheet "DMTK"');
-    const dataDMTK = sheetDMTK.getDataRange().getValues();
-    
-    // Xây dựng map tài khoản và cấu trúc phân cấp
-    const taiKhoanMap = new Map();
-    const taiKhoanList = [];
-    
-    dataDMTK.slice(1).forEach(row => {
-      const maTK = row[0]?.toString().trim();
-      if (maTK) {
-        const taiKhoanInfo = { 
-          ma: maTK,
-          ten: row[1]?.toString().trim(), 
-          loai: parseInt(row[2]) || 0, 
-          duNoGoc: parseFloat(row[3]) || 0, 
-          duCoGoc: parseFloat(row[4]) || 0 
-        };
-        taiKhoanMap.set(maTK, taiKhoanInfo);
-        taiKhoanList.push(taiKhoanInfo);
-      }
-    });
-
-    // Xây dựng cấu trúc phân cấp tài khoản với cache
-    let accountHierarchy = getCachedAccountHierarchy();
-    if (!accountHierarchy) {
-      accountHierarchy = buildAccountHierarchy(taiKhoanList);
-      cacheAccountHierarchy(accountHierarchy);
-    }
-    
-    // Xây dựng index tài khoản để tối ưu hiệu suất tìm kiếm
-    const accountIndex = buildAccountIndex(taiKhoanList);
-    
-    // Kiểm tra tính hợp lệ của cấu trúc phân cấp
-    const validation = validateAccountHierarchy(taiKhoanList);
-    if (validation.errors.length > 0) {
-      console.warn('⚠️ CẢNH BÁO CẤU TRÚC PHÂN CẤP:', validation.errors.join(', '));
-    }
-    if (validation.warnings.length > 0) {
-      console.warn('⚠️ CẢNH BÁO:', validation.warnings.join(', '));
-    }
-
-    const allTransactionsRaw = readDataFromPrefixedSheets(ss, 'DL_', ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN']);
-    const allTransactions = xuLyGiaoDichVaThue(allTransactionsRaw);
-    
-    // Tối ưu hóa xử lý giao dịch lớn
-    const optimizedTransactions = optimizeLargeTransactionProcessing(allTransactions);
-
-    ss.toast('Đang tính toán số dư và phát sinh...', 'Bước 2/4');
-    const outputData = [];
-    const headers = ['Ngày Ghi Sổ', 'Số Chứng Từ', 'Ngày Chứng Từ', 'Diễn Giải', 'TK Đối Ứng', 'Phát Sinh Nợ', 'Phát Sinh Có', 'Dư Nợ Cuối Kỳ', 'Dư Có Cuối Kỳ'];
-
-    for (const tk of taiKhoanCanXem) {
-      if (!taiKhoanMap.has(tk)) continue;
-      const tkInfo = taiKhoanMap.get(tk);
-
-      // Tìm tài khoản con của tài khoản hiện tại (sử dụng index tối ưu)
-      const childAccounts = findChildAccountsOptimized(tk, accountIndex);
-      
-      // Tạo tiêu đề báo cáo với thông tin tổng hợp
-      const titleRow = createReportTitle(tk, tkInfo, childAccounts);
-      
-      outputData.push([titleRow, '', '', '', '', '', '', '', '']);
-      outputData.push(headers);
-
-      // Tính số dư đầu kỳ động (SỬA LẠI LOGIC)
-      let [duNoDauKy, duCoDauKy] = tinhSoDuDauKyDongChoTaiKhoan(tk, childAccounts, optimizedTransactions, ngayBatDau, taiKhoanMap);
-      
-      // Debug số dư đầu kỳ (có thể bỏ sau khi test xong)
-      if (childAccounts.length > 0) {
-        debugSoDuDauKy(tk, childAccounts, optimizedTransactions, ngayBatDau, taiKhoanMap);
-      }
-      outputData.push(['', '', '', 'Số dư đầu kỳ', '', '', '', duNoDauKy, duCoDauKy]);
-
-      let duNoCuoiKy = duNoDauKy;
-      let duCoCuoiKy = duCoDauKy;
-      let tongPhatSinhNo = 0;
-      let tongPhatSinhCo = 0;
-
-      // Lấy giao dịch trong kỳ báo cáo (bao gồm tài khoản cha và con)
-      const transactionsInPeriod = getTransactionsForParentAccount(tk, childAccounts, optimizedTransactions, ngayBatDau, ngayKetThuc);
-
-            transactionsInPeriod.forEach(trans => {
-            const phatSinhNo = (trans.TK_NO === tk) ? trans.SO_TIEN : 0;
-            const phatSinhCo = (trans.TK_CO === tk) ? trans.SO_TIEN : 0;
-            const tkDoiUng = (trans.TK_NO === tk) ? trans.TK_CO : trans.TK_NO;
-
-            // Tính toán phát sinh tổng hợp từ tài khoản cha và con (SỬA LẠI)
-            const [totalPhatSinhNo, totalPhatSinhCo] = calculateAggregatedPhatSinh(trans, tk, childAccounts);
-
-            tongPhatSinhNo += totalPhatSinhNo;
-            tongPhatSinhCo += totalPhatSinhCo;
-
-            let finalDienGiai = trans.DIEN_GIAI || '';
-            const tenHang = trans.TEN_HANG?.toString().trim();
-            const quyCach = trans.QUY_CACH?.toString().trim();
-            if (tenHang) finalDienGiai += ` - ${tenHang}`;
-            if (quyCach) finalDienGiai += ` (${quyCach})`;
-
-            // Cập nhật số dư cuối kỳ (GIỮ NGUYÊN LOGIC HIỆN TẠI)
-            let duNoMoi = duNoCuoiKy + totalPhatSinhNo;
-            let duCoMoi = duCoCuoiKy + totalPhatSinhCo;
-            [duNoCuoiKy, duCoCuoiKy] = tinhSoDu(duNoMoi, duCoMoi);
-
-            outputData.push([ 
-              new Date(trans.NGAY_HT), 
-              trans.SO_CT || '', 
-              trans.NGAY_CT ? new Date(trans.NGAY_CT) : '', 
-              finalDienGiai, 
-              tkDoiUng, 
-              totalPhatSinhNo, 
-              totalPhatSinhCo, 
-              duNoCuoiKy, 
-              duCoCuoiKy 
-            ]);
-          });
-
-      outputData.push(['', '', '', 'Cộng phát sinh trong kỳ', '', tongPhatSinhNo, tongPhatSinhCo, '', '']);
-      outputData.push(['', '', '', 'Số dư cuối kỳ', '', '', '', duNoCuoiKy, duCoCuoiKy]);
-      outputData.push(['', '', '', '', '', '', '', '', '']);
-      
-      // Log thống kê quá trình tổng hợp
-      const processingTime = Date.now() - startTime;
-      logAggregationStatistics(tk, childAccounts, transactionsInPeriod.length, processingTime);
-    }
-
-    ss.toast('Đang ghi dữ liệu ra báo cáo...', 'Bước 3/4');
-    if(sheetSoCT.getLastRow() >= 1) { // Xóa toàn bộ sheet để ghi lại
-        sheetSoCT.clear();
-    }
-
-    if (outputData.length > 0) {
-      sheetSoCT.getRange(1, 1, outputData.length, 9).setValues(outputData);
-    }
-
-    ss.toast('Đang định dạng báo cáo...', 'Bước 4/4');
-    for (let i = 0; i < outputData.length; i++) {
-        const currentRow = i + 1;
-        const rowData = outputData[i];
-        const dienGiai = rowData[3]?.toString() || '';
-
-        if (dienGiai.startsWith('SỔ CHI TIẾT TÀI KHOẢN')) {
-            sheetSoCT.getRange(currentRow, 1, 1, 9).merge().setFontWeight('bold').setBackground('#c9daf8').setHorizontalAlignment('center');
-        } else if (rowData[0] === 'Ngày Ghi Sổ') {
-            sheetSoCT.getRange(currentRow, 1, 1, 9).setFontWeight('bold').setBackground('#4a86e8').setFontColor('white');
-        } else if (dienGiai.includes('Số dư đầu kỳ') || dienGiai.includes('Cộng phát sinh') || dienGiai.includes('Số dư cuối kỳ')) {
-             sheetSoCT.getRange(currentRow, 4, 1, 6).setFontWeight('bold');
-        }
-    }
-
-    ss.toast('Hoàn thành!', 'Thành công', 5);
-    
-    // Tạo báo cáo tóm tắt quá trình xử lý
-    const totalProcessingTime = Date.now() - startTime;
-    const childAccountsMap = new Map();
-    taiKhoanCanXem.forEach(tk => {
-      const childAccounts = findChildAccountsOptimized(tk, accountIndex);
-      childAccountsMap.set(tk, childAccounts);
-    });
-    createProcessingSummary(taiKhoanCanXem, childAccountsMap, totalProcessingTime);
-    
-    // Không cần alert nữa vì người dùng vẫn ở trên sidebar
-  } catch (e) {
-    console.error("LỖI TẠO SỔ CHI TIẾT: " + e.toString() + e.stack);
-    // Ném lỗi lại để sidebar có thể bắt được và hiển thị cho người dùng
-    throw new Error('Lỗi khi tạo báo cáo: ' + e.toString());
-  }
-}
 
 /**
  * HÀM PHỤ: Xây dựng cấu trúc phân cấp tài khoản
@@ -1277,52 +1078,7 @@ function determineAccountLevel(maTK, loai) {
   return 1; // Mặc định là cấp 1
 }
 
-/**
- * HÀM PHỤ: Tìm tài khoản con TRỰC TIẾP của một tài khoản cha (SỬA LẠI)
- * Chỉ tìm tài khoản con cấp ngay dưới, không tìm tài khoản con cấp thấp hơn
- */
-function findDirectChildAccounts(parentAccount, allAccounts) {
-  const children = [];
-  const parentPattern = parentAccount;
-  
-  // Tìm TẤT CẢ tài khoản con (mọi cấp)
-  allAccounts.forEach(acc => {
-    if (acc.ma !== parentAccount && acc.ma.startsWith(parentPattern)) {
-      // Kiểm tra xem có phải con không (mọi cấp)
-      if (isChildAccount(parentAccount, acc.ma)) {
-        children.push(acc);
-      }
-    }
-  });
-  
-  return children;
-}
 
-/**
- * HÀM PHỤ: Kiểm tra xem một tài khoản có phải là con TRỰC TIẾP không
- */
-function isDirectChild(parentAccount, childAccount) {
-  // Nếu tài khoản cha có 3 ký tự (cấp 1)
-  if (parentAccount.length === 3) {
-    // Con trực tiếp phải có 4 ký tự và bắt đầu bằng 3 ký tự của cha
-    return childAccount.length === 4 && childAccount.startsWith(parentAccount);
-  }
-  
-  // Nếu tài khoản cha có 4 ký tự (cấp 2)
-  if (parentAccount.length === 4) {
-    // Con trực tiếp phải có 5 ký tự và bắt đầu bằng 4 ký tự của cha
-    return childAccount.length === 5 && childAccount.startsWith(parentAccount);
-  }
-  
-  // Nếu tài khoản cha có 5 ký tự (cấp 3)
-  if (parentAccount.length === 5) {
-    // Con trực tiếp phải có 6 ký tự và bắt đầu bằng 5 ký tự của cha
-    return childAccount.length === 6 && childAccount.startsWith(parentAccount);
-  }
-  
-  // Các cấp khác: con trực tiếp phải dài hơn cha 1 ký tự
-  return childAccount.length === parentAccount.length + 1 && childAccount.startsWith(parentAccount);
-}
 
 /**
  * HÀM PHỤ: Kiểm tra xem một tài khoản có phải là con của tài khoản cha không (bao gồm tất cả các cấp)
@@ -1354,12 +1110,7 @@ function findChildAccountsOptimized(parentAccount, accountIndex) {
   return children;
 }
 
-/**
- * HÀM PHỤ: Tìm tài khoản con của một tài khoản cha (SỬA LẠI - TÌM TẤT CẢ CÁC CẤP CON)
- */
-function findChildAccounts(parentAccount, allAccounts, hierarchy) {
-  return findDirectChildAccounts(parentAccount, allAccounts);
-}
+
 
 /**
  * HÀM PHỤ: Kiểm tra xem một tài khoản có thuộc hệ thống tài khoản cha-con không
@@ -1612,46 +1363,7 @@ function getTransactionsForParentAccount(parentAccount, childAccounts, allTransa
 /**
  * HÀM PHỤ: Xử lý danh sách giao dịch thô, tạo ra các bút toán thuế GTGT ảo.
  */
-function xuLyGiaoDichVaThue(transactionsRaw) {
-  const finalTransactions = [];
-  for (const trans of transactionsRaw) {
-    const soTien = parseFloat(trans.SO_TIEN) || 0;
-    const thueVAT = parseFloat(trans.THUE_VAT) || 0;
-    const tkNo = trans.TK_NO?.toString().trim();
-    const tkCo = trans.TK_CO?.toString().trim();
-    
-    if (soTien > 0 && tkNo && tkCo) {
-      finalTransactions.push({ ...trans, SO_TIEN: soTien });
-    }
 
-    if (thueVAT > 0) {
-      const dauSoNo = tkNo.charAt(0);
-      const dauSoCo = tkCo.charAt(0);
-      let butToanThue = null;
-
-      // if (['1', '2', '6', '8'].includes(dauSoNo)) {
-      //   butToanThue = { ...trans, TK_NO: '1331', TK_CO: tkCo, SO_TIEN: thueVAT, DIEN_GIAI: `Thuế GTGT của ${trans.DIEN_GIAI || 'chứng từ ' + trans.SO_CT}` };
-        
-      // } 
-      // else if (['5', '7'].includes(dauSoCo)) {
-      //   butToanThue = { ...trans, TK_NO: tkNo, TK_CO: '33311', SO_TIEN: thueVAT, DIEN_GIAI: `Thuế GTGT của ${trans.DIEN_GIAI || 'chứng từ ' + trans.SO_CT}` };
-      // }
-       if (['5', '7'].includes(dauSoCo)) {
-        butToanThue = { ...trans, TK_NO: tkNo, TK_CO: '33311', SO_TIEN: thueVAT, DIEN_GIAI: `Thuế GTGT của ${trans.DIEN_GIAI || 'chứng từ ' + trans.SO_CT}` };
-        
-      } 
-      else if (['1', '2', '6', '8'].includes(dauSoNo)) {
-        butToanThue = { ...trans, TK_NO: '1331', TK_CO: tkCo, SO_TIEN: thueVAT, DIEN_GIAI: `Thuế GTGT của ${trans.DIEN_GIAI || 'chứng từ ' + trans.SO_CT}` };
-      }
-
-
-      if(butToanThue) {
-        finalTransactions.push(butToanThue);
-      }
-    }
-  }
-  return finalTransactions;
-}
 
 
 /**
@@ -2670,43 +2382,12 @@ function createDetailedChildReport(childAccount, transactions, ngayBatDau, ngayK
 /**
  * HÀM PHỤ: Kiểm tra tính hợp lệ của cấu trúc phân cấp
  */
-function validateAccountHierarchy(taiKhoanList) {
-  const errors = [];
-  const warnings = [];
-  
-  // Kiểm tra tài khoản trùng lặp
-  const duplicateCheck = new Map();
-  taiKhoanList.forEach(tk => {
-    if (duplicateCheck.has(tk.ma)) {
-      errors.push(`Tài khoản ${tk.ma} bị trùng lặp`);
-    } else {
-      duplicateCheck.set(tk.ma, true);
-    }
-  });
-  
-  // Kiểm tra tài khoản con có mã hợp lệ
-  taiKhoanList.forEach(tk => {
-    if (tk.ma.length < 3) {
-      warnings.push(`Tài khoản ${tk.ma} có độ dài không chuẩn (${tk.ma.length} ký tự)`);
-    }
-  });
-  
-  return { errors, warnings };
-}
+
 
 /**
  * HÀM PHỤ: Log thống kê quá trình tổng hợp
  */
-function logAggregationStatistics(parentAccount, childAccounts, transactionCount, processingTime) {
-  console.log(`📊 THỐNG KÊ TỔNG HỢP TÀI KHOẢN ${parentAccount}:`);
-  console.log(`   - Số lượng tài khoản con: ${childAccounts.length}`);
-  console.log(`   - Số lượng giao dịch xử lý: ${transactionCount}`);
-  console.log(`   - Thời gian xử lý: ${processingTime}ms`);
-  
-  if (childAccounts.length > 0) {
-    console.log(`   - Danh sách tài khoản con: ${childAccounts.map(c => c.ma).join(', ')}`);
-  }
-}
+
 
 /**
  * HÀM PHỤ: Tối ưu hóa việc xử lý giao dịch lớn
@@ -2732,84 +2413,12 @@ function optimizeLargeTransactionProcessing(transactions, batchSize = 500) {
   return optimizedTransactions;
 }
 
-/**
- * HÀM PHỤ: Kiểm tra và xử lý giao dịch trùng lặp
- */
-function removeDuplicateTransactions(transactions) {
-  const seen = new Set();
-  const uniqueTransactions = [];
-  
-  transactions.forEach(trans => {
-    const key = `${trans.NGAY_HT}_${trans.SO_CT}_${trans.TK_NO}_${trans.TK_CO}_${trans.SO_TIEN}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      uniqueTransactions.push(trans);
-    }
-  });
-  
-  return uniqueTransactions;
-}
+
 
 /**
  * HÀM PHỤ: Tính toán số dư động đầu kỳ chi tiết (DEBUG) - SỬA LẠI
  */
-function debugSoDuDauKy(parentAccount, childAccounts, allTransactions, ngayBatDau, taiKhoanMap) {
-  if (childAccounts.length > 0) {
-    console.log(`🔍 DEBUG SỐ DƯ ĐẦU KỲ CHO TÀI KHOẢN CHA ${parentAccount} (TỔNG HỢP TỪ ${childAccounts.length} TÀI KHOẢN CON):`);
-  } else {
-    console.log(`🔍 DEBUG SỐ DƯ ĐẦU KỲ CHO TÀI KHOẢN ĐƠN LẺ ${parentAccount}:`);
-  }
-  
-  let duNo = 0;
-  let duCo = 0;
-  
-  // 1. Số dư gốc của tài khoản chính
-  const parentInfo = taiKhoanMap.get(parentAccount);
-  if (parentInfo) {
-    console.log(`   - Số dư gốc TK ${parentAccount}: Nợ ${parentInfo.duNoGoc}, Có ${parentInfo.duCoGoc}`);
-    duNo += parentInfo.duNoGoc;
-    duCo += parentInfo.duCoGoc;
-  }
-  
-  // 2. Số dư gốc của tất cả tài khoản con (nếu có)
-  if (childAccounts.length > 0) {
-    childAccounts.forEach(child => {
-      const childInfo = taiKhoanMap.get(child.ma);
-      if (childInfo) {
-        console.log(`   - Số dư gốc TK ${child.ma}: Nợ ${childInfo.duNoGoc}, Có ${childInfo.duCoGoc}`);
-        duNo += childInfo.duNoGoc;
-        duCo += childInfo.duCoGoc;
-      }
-    });
-  }
-  
-  console.log(`   - Tổng số dư gốc: Nợ ${duNo}, Có ${duCo}`);
-  
-  // 3. Giao dịch trước kỳ báo cáo
-  let giaoDichTruocKy = 0;
-  allTransactions.forEach(trans => {
-    if (new Date(trans.NGAY_HT) < ngayBatDau) {
-      if (trans.TK_NO === parentAccount || isAccountInHierarchy(trans.TK_NO, parentAccount, childAccounts)) {
-        duNo += trans.SO_TIEN;
-        giaoDichTruocKy++;
-        console.log(`   - Giao dịch trước kỳ TK ${trans.TK_NO}: +${trans.SO_TIEN} (Nợ)`);
-      }
-      if (trans.TK_CO === parentAccount || isAccountInHierarchy(trans.TK_CO, parentAccount, childAccounts)) {
-        duCo += trans.SO_TIEN;
-        giaoDichTruocKy++;
-        console.log(`   - Giao dịch trước kỳ TK ${trans.TK_CO}: +${trans.SO_TIEN} (Có)`);
-      }
-    }
-  });
-  
-  console.log(`   - Số giao dịch trước kỳ: ${giaoDichTruocKy}`);
-  console.log(`   - Số dư cuối cùng: Nợ ${duNo}, Có ${duCo}`);
-  
-  const [duNoFinal, duCoFinal] = tinhSoDuDongDauKy(duNo, duCo);
-  console.log(`   - Số dư động đầu kỳ: Nợ ${duNoFinal}, Có ${duCoFinal}`);
-  
-  return [duNoFinal, duCoFinal];
-}
+
 
 /**
  * HÀM PHỤ: Tạo báo cáo tóm tắt quá trình xử lý
@@ -2838,97 +2447,379 @@ function createProcessingSummary(taiKhoanCanXem, childAccountsMap, processingTim
 /**
  * HÀM PHỤ: Test logic phân cấp tài khoản (để kiểm tra không có tính trùng lặp)
  */
-function testAccountHierarchyLogic() {
-  console.log('🧪 TEST LOGIC PHÂN CẤP TÀI KHOẢN:');
-  
-  // Test case 1: Tài khoản cấp 1
-  console.log('\n📋 Test TK 111 (cấp 1):');
-  const testAccounts1 = [
-    { ma: '111', ten: 'Tiền mặt' },
-    { ma: '1111', ten: 'Tiền mặt VND' },
-    { ma: '1112', ten: 'Tiền mặt USD' },
-    { ma: '11111', ten: 'Tiền mặt VND chính' },
-    { ma: '11112', ten: 'Tiền mặt VND phụ' },
-    { ma: '11121', ten: 'Tiền mặt USD chính' },
-    { ma: '11122', ten: 'Tiền mặt USD phụ' }
-  ];
-  
-  const children111 = findDirectChildAccounts('111', testAccounts1);
-  console.log('   - Con trực tiếp của 111:', children111.map(c => c.ma).join(', '));
-  console.log('   - Kết quả mong đợi: 1111, 1112');
-  
-  // Test case 2: Tài khoản cấp 2
-  console.log('\n📋 Test TK 1111 (cấp 2):');
-  const children1111 = findDirectChildAccounts('1111', testAccounts1);
-  console.log('   - Con trực tiếp của 1111:', children1111.map(c => c.ma).join(', '));
-  console.log('   - Kết quả mong đợi: 11111, 11112');
-  
-  // Test case 3: Tài khoản cấp 3
-  console.log('\n📋 Test TK 11111 (cấp 3):');
-  const children11111 = findDirectChildAccounts('11111', testAccounts1);
-  console.log('   - Con trực tiếp của 11111:', children11111.map(c => c.ma).join(', '));
-  console.log('   - Kết quả mong đợi: (không có)');
-  
-  // Test case 4: Kiểm tra tính trùng lặp
-  console.log('\n📋 Kiểm tra tính trùng lặp:');
-  const allChildren111 = getAllDescendants('111', testAccounts1);
-  const allChildren1111 = getAllDescendants('1111', testAccounts1);
-  const allChildren11111 = getAllDescendants('11111', testAccounts1);
-  
-  console.log('   - Tất cả con cháu của 111:', allChildren111.map(c => c.ma).join(', '));
-  console.log('   - Tất cả con cháu của 1111:', allChildren1111.map(c => c.ma).join(', '));
-  console.log('   - Tất cả con cháu của 11111:', allChildren11111.map(c => c.ma).join(', '));
-  
-  // Kiểm tra xem có tài khoản nào bị tính trùng lặp không
-  const intersection = allChildren111.filter(acc => allChildren1111.includes(acc));
-  if (intersection.length > 0) {
-    console.log('   ⚠️ CẢNH BÁO: Có tài khoản bị tính trùng lặp:', intersection.map(c => c.ma).join(', '));
-  } else {
-    console.log('   ✅ Không có tài khoản bị tính trùng lặp');
+
+
+/**
+ * HÀM MỚI: Tạo báo cáo sổ chi tiết tài khoản với xử lý thuế từ TK_THUE
+ * Phiên bản cải tiến với logic xử lý thuế mới và tổng hợp theo cấp tài khoản
+ */
+function taosochitiet(startDateStr, endDateStr, taiKhoanCanXem) {
+  const startTime = Date.now();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+    // Kiểm tra tham số đầu vào
+    const validationErrors = validateInputData(startDateStr, endDateStr, taiKhoanCanXem);
+    if (validationErrors.length > 0) {
+      throw new Error('Lỗi validation: ' + validationErrors.join(', '));
+    }
+
+    const ngayBatDau = new Date(startDateStr);
+    ngayBatDau.setHours(0, 0, 0, 0);
+    const ngayKetThuc = new Date(endDateStr);
+    ngayKetThuc.setHours(23, 59, 59, 999);
+    
+    console.log(`📅 Tạo báo cáo sổ chi tiết mới cho ${taiKhoanCanXem.length} tài khoản từ ${ngayBatDau.toLocaleDateString('vi-VN')} đến ${ngayKetThuc.toLocaleDateString('vi-VN')}`);
+
+    // Kiểm tra sheet báo cáo
+    const sheetSoCT = ss.getSheetByName('SO_CT');
+    if (!sheetSoCT) throw new Error('Không tìm thấy sheet báo cáo "SO_CT"');
+
+    ss.toast('Bắt đầu xử lý...', 'Sổ Chi Tiết Mới', -1);
+    ss.toast('Đang đọc dữ liệu từ DMTK và các sheet DL_...', 'Bước 1/5');
+
+    // Đọc dữ liệu DMTK
+    const sheetDMTK = ss.getSheetByName('DMTK');
+    if (!sheetDMTK) throw new Error('Không tìm thấy sheet "DMTK"');
+    const dataDMTK = sheetDMTK.getDataRange().getValues();
+    
+    // Xây dựng map tài khoản và cấu trúc phân cấp
+    const taiKhoanMap = new Map();
+    const taiKhoanList = [];
+    
+    dataDMTK.slice(1).forEach(row => {
+      const maTK = row[0]?.toString().trim();
+      if (maTK) {
+        const taiKhoanInfo = { 
+          ma: maTK,
+          ten: row[1]?.toString().trim(), 
+          loai: parseInt(row[2]) || 0, 
+          duNoGoc: parseFloat(row[3]) || 0, 
+          duCoGoc: parseFloat(row[4]) || 0 
+        };
+        taiKhoanMap.set(maTK, taiKhoanInfo);
+        taiKhoanList.push(taiKhoanInfo);
+      }
+    });
+
+    // Xây dựng cấu trúc phân cấp tài khoản
+    let accountHierarchy = getCachedAccountHierarchy();
+    if (!accountHierarchy) {
+      accountHierarchy = buildAccountHierarchy(taiKhoanList);
+      cacheAccountHierarchy(accountHierarchy);
+    }
+    
+    // Xây dựng index tài khoản để tối ưu hiệu suất tìm kiếm
+    const accountIndex = buildAccountIndex(taiKhoanList);
+
+    ss.toast('Đang đọc dữ liệu phát sinh...', 'Bước 2/5');
+    
+    // Đọc dữ liệu phát sinh bao gồm TK_THUE
+    const allTransactionsRaw = readDataFromPrefixedSheetsWithThue(ss, 'DL_', ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN', 'TK_THUE', 'THUE_VAT']);
+    
+    ss.toast('Đang xử lý phát sinh thuế...', 'Bước 3/5');
+    
+    // Xử lý phát sinh thuế từ TK_THUE
+    const allTransactions = xuLyPhatSinhThueTuTK_THUE(allTransactionsRaw);
+    
+    // Tối ưu hóa xử lý giao dịch lớn
+    const optimizedTransactions = optimizeLargeTransactionProcessing(allTransactions);
+
+    ss.toast('Đang tính toán số dư và phát sinh...', 'Bước 4/5');
+    const outputData = [];
+    const headers = ['Ngày Ghi Sổ', 'Số Chứng Từ', 'Ngày Chứng Từ', 'Diễn Giải', 'TK Đối Ứng', 'Phát Sinh Nợ', 'Phát Sinh Có', 'Dư Nợ Cuối Kỳ', 'Dư Có Cuối Kỳ'];
+
+    for (const tk of taiKhoanCanXem) {
+      if (!taiKhoanMap.has(tk)) continue;
+      const tkInfo = taiKhoanMap.get(tk);
+
+      // Tìm tài khoản con của tài khoản hiện tại
+      const childAccounts = findChildAccountsOptimized(tk, accountIndex);
+      
+      // Tạo tiêu đề báo cáo với thông tin tổng hợp
+      const titleRow = createReportTitle(tk, tkInfo, childAccounts);
+      
+      outputData.push([titleRow, '', '', '', '', '', '', '', '']);
+      outputData.push(headers);
+
+      // Tính số dư đầu kỳ động
+      let [duNoDauKy, duCoDauKy] = tinhSoDuDauKyDongChoTaiKhoan(tk, childAccounts, optimizedTransactions, ngayBatDau, taiKhoanMap);
+      
+      outputData.push(['', '', '', 'Số dư đầu kỳ', '', '', '', duNoDauKy, duCoDauKy]);
+
+      let duNoCuoiKy = duNoDauKy;
+      let duCoCuoiKy = duCoDauKy;
+      let tongPhatSinhNo = 0;
+      let tongPhatSinhCo = 0;
+
+      // Lấy giao dịch trong kỳ báo cáo (bao gồm tài khoản cha và con)
+      const transactionsInPeriod = getTransactionsForParentAccount(tk, childAccounts, optimizedTransactions, ngayBatDau, ngayKetThuc);
+
+      transactionsInPeriod.forEach(trans => {
+        const phatSinhNo = (trans.TK_NO === tk) ? trans.SO_TIEN : 0;
+        const phatSinhCo = (trans.TK_CO === tk) ? trans.SO_TIEN : 0;
+        const tkDoiUng = (trans.TK_NO === tk) ? trans.TK_CO : trans.TK_NO;
+
+        // Tính toán phát sinh tổng hợp từ tài khoản cha và con
+        const [totalPhatSinhNo, totalPhatSinhCo] = calculateAggregatedPhatSinh(trans, tk, childAccounts);
+
+        tongPhatSinhNo += totalPhatSinhNo;
+        tongPhatSinhCo += totalPhatSinhCo;
+
+        let finalDienGiai = trans.DIEN_GIAI || '';
+        const tenHang = trans.TEN_HANG?.toString().trim();
+        const quyCach = trans.QUY_CACH?.toString().trim();
+        if (tenHang) finalDienGiai += ` - ${tenHang}`;
+        if (quyCach) finalDienGiai += ` (${quyCach})`;
+
+        // Cập nhật số dư cuối kỳ
+        let duNoMoi = duNoCuoiKy + totalPhatSinhNo;
+        let duCoMoi = duCoCuoiKy + totalPhatSinhCo;
+        [duNoCuoiKy, duCoCuoiKy] = tinhSoDu(duNoMoi, duCoMoi);
+
+        outputData.push([ 
+          new Date(trans.NGAY_HT), 
+          trans.SO_CT || '', 
+          trans.NGAY_CT ? new Date(trans.NGAY_CT) : '', 
+          finalDienGiai, 
+          tkDoiUng, 
+          totalPhatSinhNo, 
+          totalPhatSinhCo, 
+          duNoCuoiKy, 
+          duCoCuoiKy 
+        ]);
+      });
+
+      outputData.push(['', '', '', 'Cộng phát sinh trong kỳ', '', tongPhatSinhNo, tongPhatSinhCo, '', '']);
+      outputData.push(['', '', '', 'Số dư cuối kỳ', '', '', '', duNoCuoiKy, duCoCuoiKy]);
+      outputData.push(['', '', '', '', '', '', '', '', '']);
+    }
+
+    ss.toast('Đang ghi dữ liệu ra báo cáo...', 'Bước 5/5');
+    if(sheetSoCT.getLastRow() >= 1) {
+        sheetSoCT.clear();
+    }
+
+    if (outputData.length > 0) {
+      sheetSoCT.getRange(1, 1, outputData.length, 9).setValues(outputData);
+    }
+
+    ss.toast('Đang định dạng báo cáo...', 'Hoàn thiện');
+    for (let i = 0; i < outputData.length; i++) {
+        const currentRow = i + 1;
+        const rowData = outputData[i];
+        const dienGiai = rowData[3]?.toString() || '';
+
+        if (dienGiai.startsWith('SỔ CHI TIẾT TÀI KHOẢN')) {
+            sheetSoCT.getRange(currentRow, 1, 1, 9).merge().setFontWeight('bold').setBackground('#c9daf8').setHorizontalAlignment('center');
+        } else if (rowData[0] === 'Ngày Ghi Sổ') {
+            sheetSoCT.getRange(currentRow, 1, 1, 9).setFontWeight('bold').setBackground('#4a86e8').setFontColor('white');
+        } else if (dienGiai.includes('Số dư đầu kỳ') || dienGiai.includes('Cộng phát sinh') || dienGiai.includes('Số dư cuối kỳ')) {
+             sheetSoCT.getRange(currentRow, 4, 1, 6).setFontWeight('bold');
+        }
+    }
+
+    ss.toast('Hoàn thành!', 'Thành công', 5);
+    
+    // Tạo báo cáo tóm tắt quá trình xử lý
+    const totalProcessingTime = Date.now() - startTime;
+    const childAccountsMap = new Map();
+    taiKhoanCanXem.forEach(tk => {
+      const childAccounts = findChildAccountsOptimized(tk, accountIndex);
+      childAccountsMap.set(tk, childAccounts);
+    });
+    createProcessingSummary(taiKhoanCanXem, childAccountsMap, totalProcessingTime);
+    
+  } catch (e) {
+    console.error("LỖI TẠO SỔ CHI TIẾT MỚI: " + e.toString() + e.stack);
+    throw new Error('Lỗi khi tạo báo cáo: ' + e.toString());
   }
-  
-  console.log('\n🎯 Test logic phân cấp hoàn thành!');
 }
 
 /**
- * HÀM PHỤ: Lấy tất cả con cháu của một tài khoản (để test)
+ * HÀM PHỤ: Đọc dữ liệu từ các sheet có prefix bao gồm cột TK_THUE
  */
-function getAllDescendants(parentAccount, allAccounts) {
-  const descendants = [];
-  const directChildren = findDirectChildAccounts(parentAccount, allAccounts);
+function readDataFromPrefixedSheetsWithThue(spreadsheet, sheetPrefix, requiredColumns) {
+  const allSheets = spreadsheet.getSheets();
+  const dataSheets = allSheets.filter(sheet => sheet.getName().startsWith(sheetPrefix));
   
-  descendants.push(...directChildren);
-  
-  directChildren.forEach(child => {
-    const grandChildren = getAllDescendants(child.ma, allAccounts);
-    descendants.push(...grandChildren);
-  });
-  
-  return descendants;
+  if (dataSheets.length === 0) {
+    console.log(`Không tìm thấy sheet nào bắt đầu với "${sheetPrefix}"`);
+    return [];
+  }
+
+  const combinedData = [];
+  for (const sheet of dataSheets) {
+    const sheetData = processSingleSheetWithThue(sheet, requiredColumns);
+    if (sheetData.length > 0) {
+      combinedData.push(...sheetData);
+    }
+  }
+  return combinedData;
 }
 
 /**
- * HÀM PHỤ: Kiểm tra xem một tài khoản có phải là con TRỰC TIẾP không
+ * HÀM PHỤ: Xử lý dữ liệu cho một sheet duy nhất bao gồm TK_THUE
  */
-function isDirectChild(parentAccount, childAccount) {
-  // Nếu tài khoản cha có 3 ký tự (cấp 1)
-  if (parentAccount.length === 3) {
-    // Con trực tiếp phải có 4 ký tự và bắt đầu bằng 3 ký tự của cha
-    return childAccount.length === 4 && childAccount.startsWith(parentAccount);
+function processSingleSheetWithThue(sheet, requiredColumns) {
+  try {
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return [];
+
+    const headerRow = data[0].map(h => h.toString().trim().toUpperCase());
+    
+    // Tìm vị trí của cột NGAY_HT
+    const colIndexNgayHT = headerRow.indexOf('NGAY_HT');
+
+    // Kiểm tra xem có đủ các cột bắt buộc không
+    const missingCols = requiredColumns.filter(col => !headerRow.includes(col));
+    if (missingCols.length > 0) {
+      console.error(`Sheet "${sheet.getName()}" thiếu các cột bắt buộc: ${missingCols.join(', ')}`);
+      return [];
+    }
+
+    const processedData = [];
+    // Lặp từ dòng 2 (index = 1) để bỏ qua tiêu đề
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      
+      // Kiểm tra điều kiện NGAY_HT trước tiên
+      const ngayHTValue = (colIndexNgayHT !== -1) ? row[colIndexNgayHT] : null;
+      if (!ngayHTValue) {
+        continue; // Bỏ qua dòng này và chuyển sang dòng tiếp theo
+      }
+      
+      // Thêm validation dữ liệu
+      if (!isValidRowDataWithThue(row, headerRow, requiredColumns)) {
+        console.warn(`Sheet "${sheet.getName()}", dòng ${i + 1}: Dữ liệu không hợp lệ, bỏ qua`);
+        continue;
+      }
+      
+      const rowData = {
+        sheet: sheet.getName(),
+        row: i + 1
+      };
+      
+      headerRow.forEach((header, index) => {
+        rowData[header] = row[index];
+      });
+      
+      processedData.push(rowData);
+    }
+    return processedData;
+  } catch (error) {
+    console.error(`Lỗi xử lý sheet "${sheet.getName()}": ${error.toString()}`);
+    return [];
+  }
+}
+
+/**
+ * HÀM PHỤ: Kiểm tra tính hợp lệ của dữ liệu dòng bao gồm TK_THUE
+ */
+function isValidRowDataWithThue(row, headerRow, requiredColumns) {
+  try {
+    for (const requiredCol of requiredColumns) {
+      const colIndex = headerRow.indexOf(requiredCol);
+      if (colIndex === -1) continue;
+      
+      const value = row[colIndex];
+      
+      // Đối với TK_THUE và THUE_VAT, cho phép rỗng (không bắt buộc)
+      if (requiredCol === 'TK_THUE' || requiredCol === 'THUE_VAT') {
+        continue;
+      }
+      
+      if (value === null || value === undefined || value === '') {
+        return false;
+      }
+      
+      // Kiểm tra đặc biệt cho các cột số
+      if (requiredCol === 'SO_TIEN') {
+        const numValue = parseFloat(value);
+        if (isNaN(numValue) || numValue <= 0) {
+          return false;
+        }
+      }
+      
+      // Đối với THUE_VAT, nếu có giá trị thì phải >= 0
+      if (requiredCol === 'THUE_VAT' && value !== null && value !== undefined && value !== '') {
+        const numValue = parseFloat(value);
+        if (isNaN(numValue) || numValue < 0) {
+          return false;
+        }
+      }
+    }
+    return true;
+  } catch (error) {
+    console.error('Lỗi kiểm tra dữ liệu:', error.toString());
+    return false;
+  }
+}
+
+/**
+ * HÀM PHỤ: Xử lý phát sinh thuế từ cột TK_THUE
+ */
+function xuLyPhatSinhThueTuTK_THUE(transactionsRaw) {
+  const finalTransactions = [];
+  
+  for (const trans of transactionsRaw) {
+    const soTien = parseFloat(trans.SO_TIEN) || 0;
+    const thueVAT = parseFloat(trans.THUE_VAT) || 0;
+    const tkNo = trans.TK_NO?.toString().trim();
+    const tkCo = trans.TK_CO?.toString().trim();
+    const tkThue = trans.TK_THUE?.toString().trim();
+    
+    // Thêm TẤT CẢ giao dịch gốc nếu có đủ điều kiện cơ bản
+    // Điều kiện: có ngày ghi sổ, tài khoản nợ, tài khoản có, số tiền > 0
+    if (trans.NGAY_HT && tkNo && tkCo && soTien > 0) {
+      finalTransactions.push({ ...trans, SO_TIEN: soTien });
+    }
+
+    // Xử lý phát sinh thuế từ TK_THUE (nếu có)
+    // Chỉ tạo bút toán thuế khi có thuế VAT > 0 và có TK_THUE
+    if (thueVAT > 0 && tkThue) {
+      const phatSinhThue = taoPhatSinhThue(tkThue, tkNo, tkCo, thueVAT, trans);
+      if (phatSinhThue) {
+        finalTransactions.push(phatSinhThue);
+      }
+    }
   }
   
-  // Nếu tài khoản cha có 4 ký tự (cấp 2)
-  if (parentAccount.length === 4) {
-    // Con trực tiếp phải có 5 ký tự và bắt đầu bằng 4 ký tự của cha
-    return childAccount.length === 5 && childAccount.startsWith(parentAccount);
+  return finalTransactions;
+}
+
+/**
+ * HÀM PHỤ: Tạo bút toán thuế từ TK_THUE
+ */
+function taoPhatSinhThue(tkThue, tkNo, tkCo, thueVAT, transGoc) {
+  // Kiểm tra tài khoản thuế và tạo bút toán tương ứng
+  if (tkThue === '1331' || tkThue === '1332') {
+    // Phát sinh NỢ tài khoản thuế, tài khoản đối ứng là TK_CO
+    return {
+      ...transGoc,
+      TK_NO: tkThue,
+      TK_CO: tkCo,
+      SO_TIEN: thueVAT,
+      DIEN_GIAI: `Thuế GTGT của ${transGoc.DIEN_GIAI || 'chứng từ ' + transGoc.SO_CT}`,
+      NGAY_HT: transGoc.NGAY_HT,
+      NGAY_CT: transGoc.NGAY_CT,
+      SO_CT: transGoc.SO_CT
+    };
+  } else if (tkThue === '33311' || tkThue === '33312') {
+    // Phát sinh CÓ tài khoản thuế, tài khoản đối ứng là TK_NO
+    return {
+      ...transGoc,
+      TK_NO: tkNo,
+      TK_CO: tkThue,
+      SO_TIEN: thueVAT,
+      DIEN_GIAI: `Thuế GTGT của ${transGoc.DIEN_GIAI || 'chứng từ ' + transGoc.SO_CT}`,
+      NGAY_HT: transGoc.NGAY_HT,
+      NGAY_CT: transGoc.NGAY_CT,
+      SO_CT: transGoc.SO_CT
+    };
   }
   
-  // Nếu tài khoản cha có 5 ký tự (cấp 3)
-  if (parentAccount.length === 5) {
-    // Con trực tiếp phải có 6 ký tự và bắt đầu bằng 5 ký tự của cha
-    return childAccount.length === 6 && childAccount.startsWith(parentAccount);
-  }
-  
-  // Các cấp khác: con trực tiếp phải dài hơn cha 1 ký tự
-  return childAccount.length === parentAccount.length + 1 && childAccount.startsWith(parentAccount);
+  // Nếu không phải tài khoản thuế đặc biệt, trả về null
+  return null;
 }
