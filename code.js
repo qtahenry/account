@@ -245,6 +245,22 @@ const REPORT_COLUMN_CONFIGS = {
       'SO_LUONG': 'soLuong',
       'DON_GIA': 'donGia'
     }
+  },
+    // ⭐ THAY ĐỔI: Thêm config mới cho Sổ Chi Tiết
+
+  SO_CT: {
+    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN'], // Chỉ yêu cầu các cột tối thiểu
+    mapping: {
+      'NGAY_HT': 'ngay',
+      'TK_NO': 'tkNo', 
+      'TK_CO': 'tkCo',
+      'SO_TIEN': 'soTien',
+      'THUE_VAT': 'thueVAT',
+      'TK_THUE': 'tkThue',
+      'SO_CT': 'soCt',
+      'NGAY_CT': 'ngayCt',
+      'DIEN_GIAI': 'dienGiai'
+    }
   }
 };
 // HÀM ĐỌC DỮ LIỆU UNIVERSAL
@@ -1349,411 +1365,7 @@ function ghiHangHoaVaoSheet(selectedItems) {
  * @param {string} endDate Ngày kết thúc (YYYY-MM-DD)
  * @param {Array<Object>} selectedHangHoa Mảng hàng hóa đã chọn từ sidebar
  */
-// function taoNhapXuatTonFromSidebar(startDate, endDate, selectedHangHoa) {
-//   try {
-//     console.log(`🚀 Bắt đầu tạo báo cáo NXT từ sidebar: ${startDate} → ${endDate}`);
-//     console.log(`📦 Số lượng hàng hóa được chọn: ${selectedHangHoa.length}`);
-    
-//     if (!selectedHangHoa || selectedHangHoa.length === 0) {
-//       throw new Error('Không có hàng hóa nào được chọn');
-//     }
-    
-//     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-//     // Lấy các sheet
-//     const sheetDMHH = ss.getSheetByName('DMHH');
-//     const sheetNXT = ss.getSheetByName('NXT');
-    
-//     if (!sheetDMHH || !sheetNXT) {
-//       throw new Error('Không tìm thấy sheet DMHH hoặc NXT');
-//     }
-    
-//     // Xử lý ngày báo cáo
-//     const ngayBatDau = new Date(startDate + 'T00:00:00');
-//     const ngayKetThuc = new Date(endDate + 'T23:59:59');
-    
-//     console.log(`📅 Kỳ báo cáo: ${ngayBatDau.toLocaleDateString('vi-VN')} → ${ngayKetThuc.toLocaleDateString('vi-VN')}`);
-//     console.log(`🔍 Lọc theo ${selectedHangHoa.length} hàng hóa từ sidebar`);
-    
-//     // Chuyển đổi danh sách hàng hóa thành key để dễ tìm kiếm
-//     const selectedHangHoaKeys = selectedHangHoa.map(item => `${item.maKho}|${item.maHang}`);
-    
-//     // Gọi function xử lý dữ liệu
-//     const result = xuLyDuLieuNhapXuatTon(sheetDMHH, sheetNXT, ngayBatDau, ngayKetThuc, selectedHangHoaKeys);
-    
-//     console.log(`✅ Hoàn thành báo cáo NXT cho ${selectedHangHoa.length} hàng hóa`);
-    
-//     return { 
-//       success: true, 
-//       message: `Đã tạo báo cáo NXT cho ${selectedHangHoa.length} hàng hóa`,
-//       data: result
-//     };
-    
-//   } catch (error) {
-//     console.error('❌ Lỗi trong taoNhapXuatTonFromSidebar: ' + error.toString());
-//     throw new Error('Lỗi tạo báo cáo NXT: ' + error.toString());
-//   }
-// }
 
-// /**
-//  * HÀM PHỤ: Xử lý dữ liệu Nhập Xuất Tồn (tách riêng để tái sử dụng)
-//  */
-// function xuLyDuLieuNhapXuatTon(sheetDMHH, sheetNXT, ngayBatDau, ngayKetThuc, selectedHangHoaKeys) {
-//   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  
-//   // Lấy dữ liệu từ sheet DMHH
-//   const dataDMHH = sheetDMHH.getDataRange().getValues();
-//   const headerRowDMHH = 1;
-  
-//   // ĐỌC DỮ LIỆU TỪ NHIỀU SHEET DL_* BẰNG UNIVERSAL READER
-//   const filterCondition = (row) => {
-//     // Chỉ lấy dòng có thông tin hàng hóa
-//     return row.maKho && row.maHang && row.soLuong !== 0;
-//   };
-  
-//   const dataResult = getAllDataFromDLSheets(ss, 'NXT', filterCondition);
-//   const combinedData = dataResult.data;
-  
-//   // Tạo map để lưu trữ thông tin hàng hóa
-//   const hangHoaMap = new Map();
-
-//   // Hàm kiểm tra điều kiện lọc
-//   function kiemTraDieuKienLoc(maKho, maHang) {
-//     const key = `${maKho}|${maHang}`;
-//     return selectedHangHoaKeys.includes(key);
-//   }
-
-//   // Hàm phân loại loại giao dịch
-//   function phanLoaiGiaoDich(tkNo, tkCo) {
-//     // Ưu tiên xử lý các trường hợp đặc biệt trước
-    
-//     // XUẤT_SX: Nợ 154 (ưu tiên cao nhất)
-//     if (tkNo.startsWith('154')) {
-//       return 'XUAT_SX';
-//     }
-    
-//     // NHẬP: Có 154 (ưu tiên thứ hai)
-//     if (tkCo.startsWith('154')) {
-//       return 'NHAP';
-//     }
-    
-//     // NHẬP: Nợ 15 (không phải 154)  
-//     if (tkNo.startsWith('15') && !tkNo.startsWith('154')) {
-//       return 'NHAP';
-//     }
-    
-//     // XUẤT: Có 15 (không phải 154)
-//     if (tkCo.startsWith('15') && !tkCo.startsWith('154')) {
-//       return 'XUAT';
-//     }
-    
-//     return null; // Không thuộc nghiệp vụ kho
-//   }
-  
-//   // BƯỚC 1: Đọc dữ liệu từ DMHH
-//   for (let i = headerRowDMHH; i < dataDMHH.length; i++) {
-//     const row = dataDMHH[i];
-//     const maKho = row[0]?.toString().trim();
-//     const maHang = row[1]?.toString().trim();
-//     const tenHang = row[2]?.toString().trim();
-//     const quyCache = row[3]?.toString().trim();
-//     const dvt = row[4]?.toString().trim();
-//     const slDauKy = parseFloat(row[5]) || 0;
-//     const gtDauKy = parseFloat(row[6]) || 0;
-    
-//     // Kiểm tra điều kiện lọc
-//     if (maKho && maHang && kiemTraDieuKienLoc(maKho, maHang)) {
-//       const key = `${maKho}|${maHang}`;
-      
-//       hangHoaMap.set(key, {
-//         maKho: maKho,
-//         maHang: maHang,
-//         tenHang: tenHang,
-//         quyCache: quyCache,
-//         dvt: dvt,
-//         slDauKyGoc: slDauKy,
-//         gtDauKyGoc: gtDauKy,
-//         // Phát sinh trước kỳ
-//         slNhapTruocKy: 0,
-//         gtNhapTruocKy: 0,
-//         slXuatTruocKy: 0,
-//         gtXuatTruocKy: 0,
-//         slXuatSXTruocKy: 0,
-//         gtXuatSXTruocKy: 0,
-//         // Phát sinh trong kỳ
-//         slNhapTrongKy: 0,
-//         gtNhapTrongKy: 0,
-//         slXuatTrongKy: 0,
-//         gtXuatTrongKy: 0,
-//         slXuatSXTrongKy: 0,
-//         gtXuatSXTrongKy: 0
-//       });
-//     }
-//   }
-  
-//   // BƯỚC 2: Xử lý dữ liệu giao dịch
-//   let tongGiaoDichTruocKy = 0;
-//   let tongGiaoDichTrongKy = 0;
-//   let giaoDichKhongLienQuan = 0;
-//   let giaoDichKhongKhopLoc = 0;
-  
-//   for (let i = 0; i < combinedData.length; i++) {
-//     const row = combinedData[i];
-//     const ngayHachToan = new Date(row.ngay);
-//     const tkNo = row.tkNo?.toString().trim();
-//     const tkCo = row.tkCo?.toString().trim();
-//     const soTien = parseFloat(row.soTien) || 0;
-//     const maKho = row.maKho?.toString().trim();
-//     const maHang = row.maHang?.toString().trim();
-//     const soLuong = parseFloat(row.soLuong) || 0;
-//     const donGia = parseFloat(row.donGia) || 0;
-    
-//     const key = `${maKho}|${maHang}`;
-//     const loaiGiaoDich = phanLoaiGiaoDich(tkNo, tkCo);
-    
-//     // Bỏ qua giao dịch không liên quan đến kho
-//     if (loaiGiaoDich === null) {
-//       giaoDichKhongLienQuan++;
-//       continue;
-//     }
-    
-//     // Kiểm tra điều kiện lọc
-//     if (!kiemTraDieuKienLoc(maKho, maHang)) {
-//       giaoDichKhongKhopLoc++;
-//       continue;
-//     }
-    
-//     // Tạo bản ghi hàng hóa nếu chưa tồn tại
-//     if (!hangHoaMap.has(key)) {
-//       hangHoaMap.set(key, {
-//         maKho: maKho,
-//         maHang: maHang,
-//         tenHang: `Hàng ${maHang}`,
-//         quyCache: '',
-//         dvt: '',
-//         slDauKyGoc: 0,
-//         gtDauKyGoc: 0,
-//         slNhapTruocKy: 0,
-//         gtNhapTruocKy: 0,
-//         slXuatTruocKy: 0,
-//         gtXuatTruocKy: 0,
-//         slXuatSXTruocKy: 0,
-//         gtXuatSXTruocKy: 0,
-//         slNhapTrongKy: 0,
-//         gtNhapTrongKy: 0,
-//         slXuatTrongKy: 0,
-//         gtXuatTrongKy: 0,
-//         slXuatSXTrongKy: 0,
-//         gtXuatSXTrongKy: 0
-//       });
-//     }
-    
-//     const hangHoa = hangHoaMap.get(key);
-    
-//     const laGiaoDichTruocKy = ngayHachToan < ngayBatDau;
-//     const laGiaoDichTrongKy = ngayHachToan >= ngayBatDau && ngayHachToan <= ngayKetThuc;
-    
-//     if (laGiaoDichTruocKy || laGiaoDichTrongKy) {
-      
-//       if (laGiaoDichTruocKy) {
-//         // Phát sinh trước kỳ báo cáo
-//         switch (loaiGiaoDich) {
-//           case 'NHAP':
-//             hangHoa.slNhapTruocKy += soLuong;
-//             hangHoa.gtNhapTruocKy += soTien;
-//             break;
-//           case 'XUAT':
-//             hangHoa.slXuatTruocKy += soLuong;
-//             hangHoa.gtXuatTruocKy += soTien;
-//             break;
-//           case 'XUAT_SX':
-//             hangHoa.slXuatSXTruocKy += soLuong;
-//             hangHoa.gtXuatSXTruocKy += soTien;
-//             break;
-//         }
-//         tongGiaoDichTruocKy++;
-//       } else {
-//         // Phát sinh trong kỳ báo cáo
-//         switch (loaiGiaoDich) {
-//           case 'NHAP':
-//             hangHoa.slNhapTrongKy += soLuong;
-//             hangHoa.gtNhapTrongKy += soTien;
-//             break;
-//           case 'XUAT':
-//             hangHoa.slXuatTrongKy += soLuong;
-//             hangHoa.gtXuatTrongKy += soTien;
-//             break;
-//           case 'XUAT_SX':
-//             hangHoa.slXuatSXTrongKy += soLuong;
-//             hangHoa.gtXuatSXTrongKy += soTien;
-//             break;
-//         }
-//         tongGiaoDichTrongKy++;
-//       }
-//     }
-//   }
-  
-//   // BƯỚC 3: Lọc bỏ hàng hóa không có dữ liệu
-//   function kiemTraHangHoaCoData(hangHoa) {
-//     // Tính tồn đầu kỳ báo cáo
-//     const slTonDauKyBaoCao = hangHoa.slDauKyGoc + hangHoa.slNhapTruocKy - hangHoa.slXuatTruocKy - hangHoa.slXuatSXTruocKy;
-//     const gtTonDauKyBaoCao = hangHoa.gtDauKyGoc + hangHoa.gtNhapTruocKy - hangHoa.gtXuatTruocKy - hangHoa.gtXuatSXTruocKy;
-    
-//     return (slTonDauKyBaoCao !== 0 || 
-//             gtTonDauKyBaoCao !== 0 || 
-//             hangHoa.slNhapTrongKy !== 0 || 
-//             hangHoa.gtNhapTrongKy !== 0 ||
-//             hangHoa.slXuatTrongKy !== 0 || 
-//             hangHoa.gtXuatTrongKy !== 0 ||
-//             hangHoa.slXuatSXTrongKy !== 0 || 
-//             hangHoa.gtXuatSXTrongKy !== 0);
-//   }
-  
-//   const hangHoaCoData = new Map();
-//   for (const [key, hangHoa] of hangHoaMap.entries()) {
-//     if (kiemTraHangHoaCoData(hangHoa)) {
-//       hangHoaCoData.set(key, hangHoa);
-//     }
-//   }
-  
-//   // BƯỚC 4: Ghi dữ liệu vào sheet NXT
-//   ghiDuLieuVaoSheetNXT(sheetNXT, hangHoaCoData, ngayBatDau, ngayKetThuc);
-  
-//   // BƯỚC 5: Trả về thống kê
-//   const tongHangHoa = Array.from(hangHoaMap.entries()).length;
-//   const hangHoaHienThi = hangHoaCoData.size;
-//   const hangHoaBoQua = tongHangHoa - hangHoaHienThi;
-  
-//   // Thông tin về sheets đã xử lý
-//   const sheetInfo = createDataSummary(ss, 'NXT');
-  
-//   // Hiển thị thông báo hoàn thành
-//   SpreadsheetApp.getUi().alert(`✅ Báo cáo Nhập Xuất Tồn đã hoàn thành!\n\n📊 Thống kê:\n- Hiển thị: ${hangHoaHienThi} mặt hàng\n- Bỏ qua: ${hangHoaBoQua} mặt hàng (không có dữ liệu)\n- Giao dịch trước kỳ: ${tongGiaoDichTruocKy}\n- Giao dịch trong kỳ: ${tongGiaoDichTrongKy}\n- Giao dịch không liên quan: ${giaoDichKhongLienQuan}\n- Giao dịch không khớp lọc: ${giaoDichKhongKhopLoc}\n\n📋 Nguồn dữ liệu:\n${sheetInfo}\n\n📅 Kỳ báo cáo: ${ngayBatDau.toLocaleDateString('vi-VN')} → ${ngayKetThuc.toLocaleDateString('vi-VN')}`);
-  
-//   return {
-//     hangHoaHienThi,
-//     hangHoaBoQua,
-//     tongGiaoDichTruocKy,
-//     tongGiaoDichTrongKy,
-//     giaoDichKhongLienQuan,
-//     giaoDichKhongKhopLoc,
-//     sheetInfo
-//   };
-// }
-
-// /**
-//  * HÀM PHỤ: Ghi dữ liệu vào sheet NXT
-//  */
-// function ghiDuLieuVaoSheetNXT(sheetNXT, hangHoaCoData, ngayBatDau, ngayKetThuc) {
-//   // Tạo header cho bảng NXT (2 dòng)
-//   const headers1 = [
-//     'Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'ĐVT', 
-//     'Tồn đầu kỳ', '', 'Nhập trong kỳ', '', 'Xuất trong kỳ', '', 
-//     'Xuất SX trong kỳ', '', 'Tồn cuối kỳ', '', 'Ghi chú'
-//   ];
-  
-//   const headers2 = [
-//     '', '', '', '', '', 
-//     'SL', 'Tiền', 'SL', 'Tiền', 'SL', 'Tiền', 
-//     'SL', 'Tiền', 'SL', 'Tiền', ''
-//   ];
-  
-//   // Xóa dữ liệu cũ từ dòng 4 trở đi
-//   const lastRow = sheetNXT.getLastRow();
-//   if (lastRow >= 6) {
-//     sheetNXT.getRange(6, 1, lastRow - 5, 16).clear();
-//   }
-  
-//   // Ghi header (dòng 4 và 5)
-//   sheetNXT.getRange(4, 1, 1, headers1.length).setValues([headers1]);
-//   sheetNXT.getRange(5, 1, 1, headers2.length).setValues([headers2]);
-  
-//   // Merge cells cho header
-//   const mergeCells = [
-//     [4, 1, 2, 1], // Mã kho
-//     [4, 2, 2, 1], // Mã hàng  
-//     [4, 3, 2, 1], // Tên hàng
-//     [4, 4, 2, 1], // Quy cách
-//     [4, 5, 2, 1], // ĐVT
-//     [4, 6, 1, 2], // Tồn đầu kỳ
-//     [4, 8, 1, 2], // Nhập trong kỳ
-//     [4, 10, 1, 2], // Xuất trong kỳ
-//     [4, 12, 1, 2], // Xuất SX trong kỳ
-//     [4, 14, 1, 2], // Tồn cuối kỳ
-//     [4, 16, 2, 1]  // Ghi chú
-//   ];
-  
-//   for (const [row, col, numRows, numCols] of mergeCells) {
-//     sheetNXT.getRange(row, col, numRows, numCols).merge();
-//   }
-  
-//   // Chuẩn bị dữ liệu để ghi
-//   const outputData = [];
-//   const finalSorted = Array.from(hangHoaCoData.entries()).sort((a, b) => {
-//     const [keyA] = a;
-//     const [keyB] = b;
-//     return keyA.localeCompare(keyB);
-//   });
-  
-//   for (const [key, hangHoa] of finalSorted) {
-//     // Tính tồn đầu kỳ báo cáo (gốc + phát sinh trước kỳ)
-//     const slTonDauKyBaoCao = hangHoa.slDauKyGoc + hangHoa.slNhapTruocKy - hangHoa.slXuatTruocKy - hangHoa.slXuatSXTruocKy;
-//     const gtTonDauKyBaoCao = hangHoa.gtDauKyGoc + hangHoa.gtNhapTruocKy - hangHoa.gtXuatTruocKy - hangHoa.gtXuatSXTruocKy;
-    
-//     // Tính tồn cuối kỳ
-//     const slTonCuoiKy = slTonDauKyBaoCao + hangHoa.slNhapTrongKy - hangHoa.slXuatTrongKy - hangHoa.slXuatSXTrongKy;
-//     const gtTonCuoiKy = gtTonDauKyBaoCao + hangHoa.gtNhapTrongKy - hangHoa.gtXuatTrongKy - hangHoa.gtXuatSXTrongKy;
-    
-//     outputData.push([
-//       hangHoa.maKho,
-//       hangHoa.maHang,
-//       hangHoa.tenHang,
-//       hangHoa.quyCache,
-//       hangHoa.dvt,
-//       slTonDauKyBaoCao,           // Tồn đầu kỳ SL
-//       gtTonDauKyBaoCao,           // Tồn đầu kỳ Tiền  
-//       hangHoa.slNhapTrongKy,      // Nhập SL
-//       hangHoa.gtNhapTrongKy,      // Nhập Tiền
-//       hangHoa.slXuatTrongKy,      // Xuất SL
-//       hangHoa.gtXuatTrongKy,      // Xuất Tiền
-//       hangHoa.slXuatSXTrongKy,    // Xuất SX SL
-//       hangHoa.gtXuatSXTrongKy,    // Xuất SX Tiền
-//       slTonCuoiKy,                // Tồn cuối kỳ SL
-//       gtTonCuoiKy,                // Tồn cuối kỳ Tiền
-//       ''                          // Ghi chú
-//     ]);
-//   }
-  
-//   // Ghi dữ liệu vào sheet NXT từ dòng 6
-//   if (outputData.length > 0) {
-//     sheetNXT.getRange(6, 1, outputData.length, 16).setValues(outputData);
-    
-//     // Định dạng số
-//     // Số lượng: 2 chữ số thập phân
-//     const slColumns = [6, 8, 10, 12, 14]; // Cột số lượng
-//     for (const col of slColumns) {
-//       sheetNXT.getRange(6, col, outputData.length, 1).setNumberFormat('#,##0.00');
-//     }
-    
-//     // Tiền: không thập phân
-//     const tienColumns = [7, 9, 11, 13, 15]; // Cột tiền
-//     for (const col of tienColumns) {
-//       sheetNXT.getRange(6, col, outputData.length, 1).setNumberFormat('#,##0');
-//     }
-    
-//     // Định dạng header
-//     const headerRange = sheetNXT.getRange(4, 1, 2, 16);
-//     headerRange.setBackground('#4472C4');
-//     headerRange.setFontColor('white');
-//     headerRange.setFontWeight('bold');
-//     headerRange.setHorizontalAlignment('center');
-//     headerRange.setVerticalAlignment('middle');
-    
-//     // Tạo border cho toàn bộ bảng
-//     const allDataRange = sheetNXT.getRange(4, 1, outputData.length + 2, 16);
-//     allDataRange.setBorder(true, true, true, true, true, true);
-//   }
-// }
 
 function taoNhapXuatTonFromSidebar(startDate, endDate, selectedHangHoa, reportType) {
   try {
@@ -1778,7 +1390,6 @@ function taoNhapXuatTonFromSidebar(startDate, endDate, selectedHangHoa, reportTy
     
     const selectedHangHoaKeys = selectedHangHoa.map(item => `${item.maKho}|${item.maHang}`);
     
-    // ⭐ CẬP NHẬT: Truyền 'reportType' vào hàm xử lý
     const result = xuLyDuLieuNhapXuatTon(sheetDMHH, sheetNXT, ngayBatDau, ngayKetThuc, selectedHangHoaKeys, reportType);
     
     console.log(`✅ Hoàn thành báo cáo NXT cho ${selectedHangHoa.length} hàng hóa`);
@@ -1797,7 +1408,7 @@ function taoNhapXuatTonFromSidebar(startDate, endDate, selectedHangHoa, reportTy
 
 /**
  * HÀM PHỤ: Xử lý dữ liệu Nhập Xuất Tồn
- * ⭐ CẬP NHẬT: Thêm tham số 'reportType'
+ * ⭐ CẬP NHẬT: Thêm logic lấy thứ tự gốc từ DMHH
  */
 function xuLyDuLieuNhapXuatTon(sheetDMHH, sheetNXT, ngayBatDau, ngayKetThuc, selectedHangHoaKeys, reportType) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1809,6 +1420,7 @@ function xuLyDuLieuNhapXuatTon(sheetDMHH, sheetNXT, ngayBatDau, ngayKetThuc, sel
   const combinedData = dataResult.data;
   
   const hangHoaMap = new Map();
+  const dmhhKeysInOrder = []; // Mảng lưu thứ tự gốc
 
   function kiemTraDieuKienLoc(maKho, maHang) {
     const key = `${maKho}|${maHang}`;
@@ -1823,32 +1435,38 @@ function xuLyDuLieuNhapXuatTon(sheetDMHH, sheetNXT, ngayBatDau, ngayKetThuc, sel
     return null;
   }
   
-  // BƯỚC 1: Đọc dữ liệu từ DMHH
+  // BƯỚC 1: Đọc dữ liệu và thứ tự từ DMHH
   for (let i = headerRowDMHH; i < dataDMHH.length; i++) {
     const row = dataDMHH[i];
     const maKho = row[0]?.toString().trim();
     const maHang = row[1]?.toString().trim();
-    if (maKho && maHang && kiemTraDieuKienLoc(maKho, maHang)) {
+    
+    if (maKho && maHang) {
       const key = `${maKho}|${maHang}`;
-      hangHoaMap.set(key, {
-        maKho: maKho,
-        maHang: maHang,
-        tenHang: row[2]?.toString().trim(),
-        quyCache: row[3]?.toString().trim(),
-        dvt: row[4]?.toString().trim(),
-        slDauKyGoc: parseFloat(row[5]) || 0,
-        gtDauKyGoc: parseFloat(row[6]) || 0,
-        slNhapTruocKy: 0, gtNhapTruocKy: 0,
-        slXuatTruocKy: 0, gtXuatTruocKy: 0,
-        slXuatSXTruocKy: 0, gtXuatSXTruocKy: 0,
-        slNhapTrongKy: 0, gtNhapTrongKy: 0,
-        slXuatTrongKy: 0, gtXuatTrongKy: 0,
-        slXuatSXTrongKy: 0, gtXuatSXTrongKy: 0
-      });
+      // Lưu lại thứ tự của tất cả các mã hàng trong DMHH
+      dmhhKeysInOrder.push(key);
+
+      if (kiemTraDieuKienLoc(maKho, maHang)) {
+        hangHoaMap.set(key, {
+          maKho: maKho,
+          maHang: maHang,
+          tenHang: row[2]?.toString().trim(),
+          quyCache: row[3]?.toString().trim(),
+          dvt: row[4]?.toString().trim(),
+          slDauKyGoc: parseFloat(row[5]) || 0,
+          gtDauKyGoc: parseFloat(row[6]) || 0,
+          slNhapTruocKy: 0, gtNhapTruocKy: 0,
+          slXuatTruocKy: 0, gtXuatTruocKy: 0,
+          slXuatSXTruocKy: 0, gtXuatSXTruocKy: 0,
+          slNhapTrongKy: 0, gtNhapTrongKy: 0,
+          slXuatTrongKy: 0, gtXuatTrongKy: 0,
+          slXuatSXTrongKy: 0, gtXuatSXTrongKy: 0
+        });
+      }
     }
   }
   
-  // BƯỚC 2: Xử lý dữ liệu giao dịch (logic không đổi)
+  // BƯỚC 2: Xử lý dữ liệu giao dịch
   for (let i = 0; i < combinedData.length; i++) {
     const row = combinedData[i];
     const key = `${row.maKho}|${row.maHang}`;
@@ -1858,7 +1476,6 @@ function xuLyDuLieuNhapXuatTon(sheetDMHH, sheetNXT, ngayBatDau, ngayKetThuc, sel
     if (loaiGiaoDich === null) continue;
     
     if (!hangHoaMap.has(key)) {
-        // Tạo bản ghi mới nếu cần
          hangHoaMap.set(key, {
             maKho: row.maKho, maHang: row.maHang, tenHang: `Hàng ${row.maHang}`,
             quyCache: '', dvt: '', slDauKyGoc: 0, gtDauKyGoc: 0,
@@ -1882,7 +1499,7 @@ function xuLyDuLieuNhapXuatTon(sheetDMHH, sheetNXT, ngayBatDau, ngayKetThuc, sel
     }
   }
   
-  // BƯỚC 3: Lọc hàng hóa có dữ liệu (logic không đổi)
+  // BƯỚC 3: Lọc hàng hóa có dữ liệu
   const hangHoaCoData = new Map();
   for (const [key, hangHoa] of hangHoaMap.entries()) {
     const slTonDauKy = hangHoa.slDauKyGoc + hangHoa.slNhapTruocKy - hangHoa.slXuatTruocKy - hangHoa.slXuatSXTruocKy;
@@ -1891,97 +1508,123 @@ function xuLyDuLieuNhapXuatTon(sheetDMHH, sheetNXT, ngayBatDau, ngayKetThuc, sel
     }
   }
   
-  // BƯỚC 4: Ghi dữ liệu vào sheet NXT
-  // ⭐ CẬP NHẬT: Truyền 'reportType' vào hàm ghi dữ liệu
-  ghiDuLieuVaoSheetNXT(sheetNXT, hangHoaCoData, ngayBatDau, ngayKetThuc, reportType);
+  // BƯỚC 4: Ghi dữ liệu vào sheet NXT, truyền thứ tự gốc vào
+  ghiDuLieuVaoSheetNXT(sheetNXT, hangHoaCoData, ngayBatDau, ngayKetThuc, reportType, dmhhKeysInOrder);
   
-  // BƯỚC 5: Trả về thống kê (logic không đổi)
-  const thongKe = { /* ... */ }; 
+  const thongKe = {}; 
   return thongKe;
 }
 
 /**
  * HÀM PHỤ: Ghi dữ liệu vào sheet NXT
- * ⭐ CẬP NHẬT: Hoàn toàn được viết lại để xử lý 3 loại báo cáo
+ * ⭐ CẬP NHẬT: Sử dụng thứ tự từ DMHH thay vì sắp xếp lại
  */
-function ghiDuLieuVaoSheetNXT(sheetNXT, hangHoaCoData, ngayBatDau, ngayKetThuc, reportType) {
-  // 1. Xác định cấu trúc báo cáo dựa trên reportType
+function ghiDuLieuVaoSheetNXT(sheetNXT, hangHoaCoData, ngayBatDau, ngayKetThuc, reportType, dmhhKeysInOrder) {
   let headers1, headers2, outputColumns, mergeCellsDef;
-  let numCols, numberFormatDef;
+  let numCols, numberFormatDef, dataStartRow = 6, headerRows = 2;
+
+  const formatSL = '#,##0.00;-#,##0.00;';
+  const formatGT = '#,##0;-#,##0;';
 
   if (reportType === 'SL') {
     numCols = 11;
-    headers1 = ['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'ĐVT', 'Tồn đầu kỳ', 'Nhập trong kỳ', 'Xuất trong kỳ', 'Xuất SX trong kỳ', 'Tồn cuối kỳ', 'Ghi chú'];
-    headers2 = ['', '', '', '', '', 'Số Lượng', 'Số Lượng', 'Số Lượng', 'Số Lượng', 'Số Lượng', ''];
+    headerRows = 1;
+    dataStartRow = 5;
+    headers1 = ['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'ĐVT', 'SL Tồn đầu kỳ', 'SL Nhập trong kỳ', 'SL Xuất trong kỳ', 'SL Xuất SX trong kỳ', 'SL Tồn cuối kỳ', 'Ghi chú'];
+    headers2 = null;
     outputColumns = item => [item.maKho, item.maHang, item.tenHang, item.quyCache, item.dvt, item.slTonDauKy, item.slNhapTrongKy, item.slXuatTrongKy, item.slXuatSXTrongKy, item.slTonCuoiKy, ''];
-    mergeCellsDef = [[4, 1, 2, 1], [4, 2, 2, 1], [4, 3, 2, 1], [4, 4, 2, 1], [4, 5, 2, 1], [4, 11, 2, 1]];
-    numberFormatDef = { format: '#,##0.00', range: { col: 6, count: 5 } }; // Cột F -> J
+    mergeCellsDef = [];
+    numberFormatDef = { format: formatSL, range: { col: 6, count: 5 } };
   } else if (reportType === 'GT') {
     numCols = 11;
-    headers1 = ['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'ĐVT', 'Tồn đầu kỳ', 'Nhập trong kỳ', 'Xuất trong kỳ', 'Xuất SX trong kỳ', 'Tồn cuối kỳ', 'Ghi chú'];
-    headers2 = ['', '', '', '', '', 'Giá Trị', 'Giá Trị', 'Giá Trị', 'Giá Trị', 'Giá Trị', ''];
+    headerRows = 1;
+    dataStartRow = 5;
+    headers1 = ['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'ĐVT', 'GT Tồn đầu kỳ', 'GT Nhập trong kỳ', 'GT Xuất trong kỳ', 'GT Xuất SX trong kỳ', 'GT Tồn cuối kỳ', 'Ghi chú'];
+    headers2 = null;
     outputColumns = item => [item.maKho, item.maHang, item.tenHang, item.quyCache, item.dvt, item.gtTonDauKy, item.gtNhapTrongKy, item.gtXuatTrongKy, item.gtXuatSXTrongKy, item.gtTonCuoiKy, ''];
-    mergeCellsDef = [[4, 1, 2, 1], [4, 2, 2, 1], [4, 3, 2, 1], [4, 4, 2, 1], [4, 5, 2, 1], [4, 11, 2, 1]];
-    numberFormatDef = { format: '#,##0', range: { col: 6, count: 5 } }; // Cột F -> J
+    mergeCellsDef = [];
+    numberFormatDef = { format: formatGT, range: { col: 6, count: 5 } };
   } else { // 'ALL'
     numCols = 16;
     headers1 = ['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'ĐVT', 'Tồn đầu kỳ', '', 'Nhập trong kỳ', '', 'Xuất trong kỳ', '', 'Xuất SX trong kỳ', '', 'Tồn cuối kỳ', '', 'Ghi chú'];
     headers2 = ['', '', '', '', '', 'SL', 'Tiền', 'SL', 'Tiền', 'SL', 'Tiền', 'SL', 'Tiền', 'SL', 'Tiền', ''];
     outputColumns = item => [item.maKho, item.maHang, item.tenHang, item.quyCache, item.dvt, item.slTonDauKy, item.gtTonDauKy, item.slNhapTrongKy, item.gtNhapTrongKy, item.slXuatTrongKy, item.gtXuatTrongKy, item.slXuatSXTrongKy, item.gtXuatSXTrongKy, item.slTonCuoiKy, item.gtTonCuoiKy, ''];
     mergeCellsDef = [[4, 1, 2, 1], [4, 2, 2, 1], [4, 3, 2, 1], [4, 4, 2, 1], [4, 5, 2, 1], [4, 6, 1, 2], [4, 8, 1, 2], [4, 10, 1, 2], [4, 12, 1, 2], [4, 14, 1, 2], [4, 16, 2, 1]];
-    numberFormatDef = null; // Sẽ xử lý riêng
+    numberFormatDef = null;
   }
 
-  // 2. Xóa dữ liệu cũ và ghi header
   const lastRow = sheetNXT.getLastRow();
   if (lastRow >= 4) {
     sheetNXT.getRange(4, 1, lastRow - 3, sheetNXT.getMaxColumns()).clear();
   }
+  
   sheetNXT.getRange(4, 1, 1, headers1.length).setValues([headers1]);
-  sheetNXT.getRange(5, 1, 1, headers2.length).setValues([headers2]);
+  if (headers2) {
+    sheetNXT.getRange(5, 1, 1, headers2.length).setValues([headers2]);
+  }
 
-  // Merge cells
-  for (const [row, col, numRows, numCols] of mergeCellsDef) {
-    sheetNXT.getRange(row, col, numRows, numCols).merge();
+  if (mergeCellsDef.length > 0) {
+    for (const [row, col, numRows, numCols] of mergeCellsDef) {
+      sheetNXT.getRange(row, col, numRows, numCols).merge();
+    }
   }
   
-  // 3. Chuẩn bị dữ liệu
   const outputData = [];
-  const finalSorted = Array.from(hangHoaCoData.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  
-  for (const [key, hangHoa] of finalSorted) {
-    const slTonDauKy = hangHoa.slDauKyGoc + hangHoa.slNhapTruocKy - hangHoa.slXuatTruocKy - hangHoa.slXuatSXTruocKy;
-    const gtTonDauKy = hangHoa.gtDauKyGoc + hangHoa.gtNhapTruocKy - hangHoa.gtXuatTruocKy - hangHoa.gtXuatSXTruocKy;
-    const slTonCuoiKy = slTonDauKy + hangHoa.slNhapTrongKy - hangHoa.slXuatTrongKy - hangHoa.slXuatSXTrongKy;
-    const gtTonCuoiKy = gtTonDauKy + hangHoa.gtNhapTrongKy - hangHoa.gtXuatTrongKy - hangHoa.gtXuatSXTrongKy;
-    
-    const itemData = { ...hangHoa, slTonDauKy, gtTonDauKy, slTonCuoiKy, gtTonCuoiKy };
-    outputData.push(outputColumns(itemData));
+  const processedKeys = new Set();
+
+  // ⭐ THAY ĐỔI: Duyệt theo thứ tự của DMHH trước
+  for (const key of dmhhKeysInOrder) {
+    if (hangHoaCoData.has(key) && !processedKeys.has(key)) {
+      const hangHoa = hangHoaCoData.get(key);
+      const slTonDauKy = hangHoa.slDauKyGoc + hangHoa.slNhapTruocKy - hangHoa.slXuatTruocKy - hangHoa.slXuatSXTruocKy;
+      const gtTonDauKy = hangHoa.gtDauKyGoc + hangHoa.gtNhapTruocKy - hangHoa.gtXuatTruocKy - hangHoa.gtXuatSXTruocKy;
+      const slTonCuoiKy = slTonDauKy + hangHoa.slNhapTrongKy - hangHoa.slXuatTrongKy - hangHoa.slXuatSXTrongKy;
+      const gtTonCuoiKy = gtTonDauKy + hangHoa.gtNhapTrongKy - hangHoa.gtXuatTrongKy - hangHoa.gtXuatSXTrongKy;
+      
+      const itemData = { ...hangHoa, slTonDauKy, gtTonDauKy, slTonCuoiKy, gtTonCuoiKy };
+      outputData.push(outputColumns(itemData));
+      processedKeys.add(key);
+    }
+  }
+
+  // Thêm các mã hàng có phát sinh nhưng không có trong DMHH (nếu có)
+  for (const [key, hangHoa] of hangHoaCoData.entries()) {
+    if (!processedKeys.has(key)) {
+      const slTonDauKy = hangHoa.slDauKyGoc + hangHoa.slNhapTruocKy - hangHoa.slXuatTruocKy - hangHoa.slXuatSXTruocKy;
+      const gtTonDauKy = hangHoa.gtDauKyGoc + hangHoa.gtNhapTruocKy - hangHoa.gtXuatTruocKy - hangHoa.gtXuatSXTruocKy;
+      const slTonCuoiKy = slTonDauKy + hangHoa.slNhapTrongKy - hangHoa.slXuatTrongKy - hangHoa.slXuatSXTrongKy;
+      const gtTonCuoiKy = gtTonDauKy + hangHoa.gtNhapTrongKy - hangHoa.gtXuatTrongKy - hangHoa.gtXuatSXTrongKy;
+      
+      const itemData = { ...hangHoa, slTonDauKy, gtTonDauKy, slTonCuoiKy, gtTonCuoiKy };
+      outputData.push(outputColumns(itemData));
+    }
   }
   
-  // 4. Ghi và định dạng dữ liệu
   if (outputData.length > 0) {
-    sheetNXT.getRange(6, 1, outputData.length, numCols).setValues(outputData);
+    sheetNXT.getRange(dataStartRow, 1, outputData.length, numCols).setValues(outputData);
     
-    // Định dạng số
     if (numberFormatDef) {
       const { format, range } = numberFormatDef;
-      sheetNXT.getRange(6, range.col, outputData.length, range.count).setNumberFormat(format);
-    } else { // Trường hợp 'ALL'
+      sheetNXT.getRange(dataStartRow, range.col, outputData.length, range.count).setNumberFormat(format);
+    } else {
       const slColumns = [6, 8, 10, 12, 14];
-      for (const col of slColumns) sheetNXT.getRange(6, col, outputData.length, 1).setNumberFormat('#,##0.00');
+      for (const col of slColumns) sheetNXT.getRange(dataStartRow, col, outputData.length, 1).setNumberFormat(formatSL);
       const tienColumns = [7, 9, 11, 13, 15];
-      for (const col of tienColumns) sheetNXT.getRange(6, col, outputData.length, 1).setNumberFormat('#,##0');
+      for (const col of tienColumns) sheetNXT.getRange(dataStartRow, col, outputData.length, 1).setNumberFormat(formatGT);
     }
     
-    // Định dạng header và kẻ khung
-    const headerRange = sheetNXT.getRange(4, 1, 2, numCols);
-    headerRange.setBackground('#4472C4').setFontColor('white').setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
-    const allDataRange = sheetNXT.getRange(4, 1, outputData.length + 2, numCols);
+    const headerRange = sheetNXT.getRange(4, 1, headerRows, numCols);
+    headerRange.setBackground('#4472C4')
+             .setFontColor('white')
+             .setFontWeight('bold')
+             .setHorizontalAlignment('center')
+             .setVerticalAlignment('middle')
+             .setWrap(true);
+             
+    const allDataRange = sheetNXT.getRange(4, 1, outputData.length + headerRows, numCols);
     allDataRange.setBorder(true, true, true, true, true, true);
   }
 }
-
 /**
  * HÀM PHỤ: Cache cấu trúc phân cấp tài khoản để tăng hiệu suất
  */
