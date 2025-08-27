@@ -273,6 +273,21 @@ const REPORT_COLUMN_CONFIGS = {
       // ⭐ THAY ĐỔI: Sửa lại tên thuộc tính cho nhất quán
       'THUE_VAT': 'thueVAT'
     }
+  },
+  // ⭐ SỬA LỖI: Thêm config cho PHIEU_BH để hàm inPhieuBanHang hoạt động
+  PHIEU_BH: {
+    required: ['NGAY_HT', 'SO_CT', 'MA_KHO', 'MA_HANG', 'CO_SO', 'SO_LUONG', 'SO_TIEN'],
+    mapping: {
+      'NGAY_HT': 'ngay',
+      'SO_CT': 'soCt',
+      'MA_KHO': 'maKho',
+      'MA_HANG': 'maHang',
+      'CO_SO': 'coSo',
+      'SO_LUONG': 'soLuong',
+      'SO_TIEN': 'soTien',
+      'THUE_VAT': 'thueVAT',
+      'GHI_CHU': 'ghiChu' // ⭐ THAY ĐỔI: Thêm GHI_CHU để đọc từ sheet DL_
+    }
   }
 };
 // HÀM ĐỌC DỮ LIỆU UNIVERSAL
@@ -2615,4 +2630,275 @@ function getDonHangForSidebar() {
     return [];
   }
 }
+
+
+/**
+ * ⭐ HÀM MỚI (ĐÃ CẬP NHẬT BỐ CỤC): Tạo và in Phiếu Bán Hàng.
+ * @param {string} soChungTu - Số chứng từ cần in phiếu.
+ * @param {string} reportType - Loại báo cáo ('FULL' hoặc 'QUANTITY_ONLY').
+ */
+function inPhieuBanHang(soChungTu, reportType = 'FULL') {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  try {
+    // 1. Kiểm tra và chuẩn hóa đầu vào
+    if (!soChungTu || soChungTu.trim() === '') {
+      throw new Error('Vui lòng cung cấp Số Chứng Từ.');
+    }
+    const soChungTuNormalized = soChungTu.replace(/\s/g, '').toUpperCase();
+
+    ss.toast(`Đang tìm chứng từ ${soChungTuNormalized}...`, 'Bước 1/4');
+
+    // 2. Lấy các sheet cần thiết
+    const sheetDMDH = ss.getSheetByName('DMDONHANG');
+    const sheetBCBH = ss.getSheetByName('PHIEU_BH');
+    if (!sheetDMDH || !sheetBCBH) {
+      throw new Error('Không tìm thấy sheet DMDONHANG hoặc PHIEU_BH');
+    }
+
+    // 3. Đọc và lọc dữ liệu giao dịch
+    const allGiaoDich = getAllDataFromDLSheets(ss, 'PHIEU_BH').data;
+    const giaoDichCuaPhieu = allGiaoDich.filter(gd => 
+      gd.soCt && gd.soCt.toString().replace(/\s/g, '').toUpperCase() === soChungTuNormalized
+    );
+
+    if (giaoDichCuaPhieu.length === 0) {
+      throw new Error(`Không tìm thấy giao dịch nào cho Số Chứng Từ: ${soChungTu}`);
+    }
+    
+    const ngayChungTu = new Date(giaoDichCuaPhieu[0].ngay);
+
+    ss.toast('Đang tổng hợp dữ liệu phiếu...', 'Bước 2/4');
+
+    // 4. Đọc dữ liệu từ DMDONHANG và xử lý
+    const allDonHangData = sheetDMDH.getDataRange().getValues();
+    const headerDMDH = allDonHangData[0].map(h => h.toString().trim().toUpperCase());
+    const sizeCols = headerDMDH.map((h, i) => h.startsWith('SIZE') ? { index: i, name: h } : null).filter(Boolean);
+
+    const reportDataMap = new Map();
+    const tongPhieu = {
+      sl: 0,
+      tien: 0,
+      thue: 0,
+      tongTien: 0
+    };
+
+    // Khởi tạo cấu trúc dữ liệu cho các sản phẩm có trong phiếu
+    for (const gd of giaoDichCuaPhieu) {
+      const key = `${gd.maKho}|${gd.maHang}`;
+      if (!reportDataMap.has(key)) {
+        reportDataMap.set(key, {
+          info: [gd.maKho, gd.maHang, '', '', ''],
+          ghiChuList: [],
+          sizes: [],
+          slThucXuat: [],
+          thanhTien: 0,
+          thue: 0,
+          sizeMap: new Map()
+        });
+      }
+    }
+
+    // Lấy thông tin chi tiết từ DMDONHANG
+    for (let i = 1; i < allDonHangData.length; i++) {
+      const row = allDonHangData[i];
+      const maKho = row[headerDMDH.indexOf('MA_KHO')];
+      const maHang = row[headerDMDH.indexOf('MA_HANG')];
+      const key = `${maKho}|${maHang}`;
+
+      if (reportDataMap.has(key)) {
+        const donHang = reportDataMap.get(key);
+        donHang.info[2] = row[headerDMDH.indexOf('TEN_HANG')];
+        donHang.info[3] = row[headerDMDH.indexOf('QUY_CACH')];
+        donHang.info[4] = row[headerDMDH.indexOf('DVT')];
+        
+        for (let j = 0; j < sizeCols.length; j++) {
+          const sizeName = row[sizeCols[j].index];
+          if (sizeName) {
+            donHang.sizes.push(sizeName);
+            donHang.slThucXuat.push(0);
+            donHang.sizeMap.set(sizeName.toString(), j);
+          }
+        }
+      }
+    }
+
+    // Điền số liệu thực xuất từ giao dịch và tính tổng
+    for (const gd of giaoDichCuaPhieu) {
+      const key = `${gd.maKho}|${gd.maHang}`;
+      const donHang = reportDataMap.get(key);
+      if (donHang) {
+        const sizeIndex = donHang.sizeMap.get(gd.coSo.toString());
+        if (sizeIndex !== undefined) {
+          donHang.slThucXuat[sizeIndex] += gd.soLuong;
+        }
+        donHang.thanhTien += gd.soTien;
+        donHang.thue += gd.thueVAT || 0;
+        tongPhieu.sl += gd.soLuong;
+        tongPhieu.tien += gd.soTien;
+        tongPhieu.thue += gd.thueVAT || 0;
+        if (gd.ghiChu && gd.ghiChu.trim() !== '') {
+          donHang.ghiChuList.push(gd.ghiChu.trim());
+        }
+      }
+    }
+    tongPhieu.tongTien = tongPhieu.tien + tongPhieu.thue;
+
+    ss.toast('Đang ghi dữ liệu ra phiếu...', 'Bước 3/4');
+
+    // 5. Ghi dữ liệu ra sheet
+    sheetBCBH.clear();
+    
+    // Ghi Liên 1
+    let lastRow = generateInvoiceContent(sheetBCBH, 1, '--- LIÊN 1: LƯU TẠI CÔNG TY ---', soChungTuNormalized, ngayChungTu, reportDataMap, tongPhieu, reportType);
+    
+    // Tạo khoảng cách
+    let nextStartRow = lastRow + 4;
+    
+    // Ghi Liên 2
+    generateInvoiceContent(sheetBCBH, nextStartRow, '--- LIÊN 2: GIAO CHO KHÁCH HÀNG ---', soChungTuNormalized, ngayChungTu, reportDataMap, tongPhieu, reportType);
+
+    const totalCols = reportType === 'FULL' ? (10 + 15 + 1) : (5 + 15 + 1);
+    ss.toast('Định dạng phiếu in...', 'Bước 4/4');
+    sheetBCBH.autoResizeColumns(1, totalCols);
+    
+    ss.toast('✅ Hoàn thành!', 'Thành công', 5);
+    return { success: true };
+
+  } catch (e) {
+    console.error("LỖI KHI IN PHIẾU BÁN HÀNG: " + e.toString() + e.stack);
+    throw new Error('Lỗi khi tạo phiếu: ' + e.toString());
+  }
+}
+
+/**
+ * ⭐ HÀM HỖ TRỢ: Ghi nội dung của một liên vào sheet.
+ */
+function generateInvoiceContent(sheet, startRow, lienTitle, soChungTuNormalized, ngayChungTu, reportDataMap, tongPhieu, reportType) {
+  const isFullReport = reportType === 'FULL';
+  const NUM_SIZE_COLS = 15;
+  const baseInfoCols = 5; // Mã kho -> ĐVT
+  const baseValueCols = isFullReport ? 5 : 1; // Tổng SL -> Tổng Tiền (5) hoặc chỉ Tổng SL (1)
+  const baseCols = baseInfoCols + baseValueCols;
+  const totalCols = baseCols + NUM_SIZE_COLS + 1; // +1 cho Ghi Chú
+
+  let currentRow = startRow;
+
+  // Tiêu đề Liên
+  sheet.getRange(currentRow, 1, 1, totalCols).merge().setValue(lienTitle).setFontWeight('bold').setHorizontalAlignment('center');
+  currentRow += 2;
+
+  // Header phiếu
+  sheet.getRange(currentRow, 1, 1, totalCols).merge().setValue("PHIẾU GIAO HÀNG").setFontWeight('bold').setFontSize(16).setHorizontalAlignment('center');
+  currentRow++;
+  sheet.getRange(currentRow, 1, 1, totalCols).merge().setValue(`Số: ${soChungTuNormalized}`).setFontStyle('italic').setHorizontalAlignment('center');
+  currentRow++;
+  sheet.getRange(currentRow, 1, 1, totalCols).merge().setValue(`Ngày: ${ngayChungTu.toLocaleDateString('vi-VN')}`).setFontStyle('italic').setHorizontalAlignment('center');
+  currentRow += 2;
+
+  // Tiêu đề chính
+  const mainHeaderInfo = ['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'Đơn vị tính'];
+  const mainHeaderValues = isFullReport ? ['Tổng SL', 'Đơn Giá', 'Thành Tiền', 'Thuế VAT', 'Tổng Tiền'] : ['Tổng SL'];
+  const mainHeader = [[...mainHeaderInfo, ...mainHeaderValues, 'Cỡ số']];
+  
+  const headerRange = sheet.getRange(currentRow, 1, 1, baseCols + 1);
+  headerRange.setValues(mainHeader)
+             .setFontWeight('bold')
+             .setBackground('#4a86e8')
+             .setFontColor('white')
+             .setHorizontalAlignment('center');
+  sheet.getRange(currentRow, baseCols + 1, 1, NUM_SIZE_COLS).merge().setBackground('#4a86e8');
+  sheet.getRange(currentRow, baseCols + 1 + NUM_SIZE_COLS, 1, 1).setValue('Ghi Chú')
+             .setFontWeight('bold')
+             .setBackground('#4a86e8')
+             .setFontColor('white')
+             .setHorizontalAlignment('center');
+  currentRow++;
+
+  // ⭐ THAY ĐỔI: Ghi chi tiết và các dòng trống
+  let productsWritten = 0;
+  reportDataMap.forEach(donHang => {
+    const tongSlThucXuat = donHang.slThucXuat.reduce((a, b) => a + b, 0);
+    if (tongSlThucXuat === 0) return;
+    productsWritten++;
+
+    const ghiChuFinal = [...new Set(donHang.ghiChuList)].join('; ');
+    
+    const activeSizes = [];
+    const activeQuantities = [];
+    donHang.sizes.forEach((size, index) => {
+      if (donHang.slThucXuat[index] > 0) {
+        activeSizes.push(`#${size}`);
+        activeQuantities.push(donHang.slThucXuat[index]);
+      }
+    });
+    
+    const paddedSizes = [...activeSizes, ...Array(NUM_SIZE_COLS - activeSizes.length).fill('')];
+    const paddedQuantities = [...activeQuantities, ...Array(NUM_SIZE_COLS - activeQuantities.length).fill('')];
+    
+    const row1Data = ['', '', '', '', '', ...Array(baseValueCols).fill(''), ...paddedSizes, ''];
+    
+    let row2DataValues;
+    if (isFullReport) {
+      const tongTienDonHang = donHang.thanhTien + donHang.thue;
+      const donGia = tongSlThucXuat > 0 ? donHang.thanhTien / tongSlThucXuat : 0;
+      row2DataValues = [tongSlThucXuat, donGia, donHang.thanhTien, donHang.thue, tongTienDonHang];
+    } else {
+      row2DataValues = [tongSlThucXuat];
+    }
+    const row2Data = [...donHang.info, ...row2DataValues, ...paddedQuantities, ghiChuFinal];
+    
+    const blockRange = sheet.getRange(currentRow, 1, 2, totalCols);
+    blockRange.setValues([row1Data, row2Data]);
+    
+    // Định dạng
+    blockRange.setBorder(true, true, true, true, true, true, '#b7b7b7', SpreadsheetApp.BorderStyle.SOLID);
+    sheet.getRange(currentRow, baseCols + 1, 1, NUM_SIZE_COLS).setHorizontalAlignment('center').setFontWeight('bold');
+    
+    const slFormat = "#,##0;(#,##0);";
+    const tienFormat = "#,##0;(#,##0);";
+    sheet.getRange(currentRow + 1, baseInfoCols + 1, 1, 1).setNumberFormat(slFormat); // Tổng SL
+    if (isFullReport) {
+      sheet.getRange(currentRow + 1, baseInfoCols + 2, 1, 4).setNumberFormat(tienFormat); // Đơn giá -> Tổng tiền
+    }
+    sheet.getRange(currentRow + 1, baseCols + 1, 1, NUM_SIZE_COLS).setNumberFormat(slFormat); // SL cỡ
+    
+    currentRow += 2;
+  });
+
+  // ⭐ THAY ĐỔI: Thêm các dòng trống để đủ 12 dòng chi tiết
+  const emptyRowsNeeded = 7 - productsWritten;
+  if (emptyRowsNeeded > 0) {
+    for (let i = 0; i < emptyRowsNeeded; i++) {
+      const emptyBlockRange = sheet.getRange(currentRow, 1, 2, totalCols);
+      emptyBlockRange.setBorder(true, true, true, true, true, true, '#b7b7b7', SpreadsheetApp.BorderStyle.SOLID);
+      currentRow += 2;
+    }
+  }
+  
+  currentRow++;
+
+  // Dòng tổng cộng
+  let totalRowData;
+  if (isFullReport) {
+    totalRowData = ['TỔNG CỘNG TOÀN PHIẾU', '', '', '', '', tongPhieu.sl, '', tongPhieu.tien, tongPhieu.thue, tongPhieu.tongTien];
+  } else {
+    totalRowData = ['TỔNG CỘNG TOÀN PHIẾU', '', '', '', '', tongPhieu.sl];
+  }
+  
+  const totalRowRange = sheet.getRange(currentRow, 1, 1, baseCols);
+  totalRowRange.setValues([totalRowData]);
+  totalRowRange.setFontWeight('bold').setBackground('#f3f3f3');
+  sheet.getRange(currentRow, 1, 1, baseInfoCols).merge().setHorizontalAlignment('right');
+
+  const slFormat = "#,##0;(#,##0);";
+  const tienFormat = "#,##0;(#,##0);";
+  sheet.getRange(currentRow, baseInfoCols + 1, 1, 1).setNumberFormat(slFormat);
+  if (isFullReport) {
+    sheet.getRange(currentRow, baseInfoCols + 3, 1, 3).setNumberFormat(tienFormat);
+  }
+  
+  currentRow++;
+  return currentRow;
+}
+
 
