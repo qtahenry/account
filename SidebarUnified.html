@@ -384,7 +384,7 @@
 
   <div id="main" class="tab-content active">
     <div class="mode-toggle">
-      <span class="mode-label">� Báo Cáo</span>
+      <span class="mode-label">📊 Báo Cáo</span>
       <div class="toggle-switch" onclick="toggleMode()" id="modeToggle"></div>
       <span class="mode-label">✏️ Ghi định khoản</span>
     </div>
@@ -534,12 +534,73 @@
     
     let selectedWriteAccounts = [];
 
+    let isHangHoaLoaded = false;
+
+    // ⭐ THAY ĐỔI: Chỉ còn một lệnh gọi duy nhất khi tải
+    window.onload = function() {
+      google.script.run.withSuccessHandler(handleInitialData).withFailureHandler(handleLoadError).getInitialSidebarData();
+    };
+
+    // ⭐ THAY ĐỔI: Hàm mới để xử lý dữ liệu trả về
+    function handleInitialData(data) {
+      if (data.error) {
+        handleLoadError(data.error);
+        return;
+      }
+
+      // Xử lý ngày tháng
+      if (data.dates && data.dates.startDate && data.dates.endDate) {
+        document.getElementById('startDate').value = data.dates.startDate;
+        document.getElementById('endDate').value = data.dates.endDate;
+        document.getElementById('hanghoaStartDate').value = data.dates.startDate;
+        document.getElementById('hanghoaEndDate').value = data.dates.endDate;
+      } else {
+        setDefaultDates();
+      }
+
+      // Xử lý danh sách tài khoản
+      if (data.accounts) {
+        allAccounts = data.accounts;
+        renderAccountList(allAccounts);
+        renderWriteAccountsList(allAccounts);
+        updateStatus();
+      } else {
+         document.getElementById('loading').textContent = 'Không có dữ liệu tài khoản.';
+         document.getElementById('loadingWrite').textContent = 'Không có dữ liệu tài khoản.';
+      }
+    }
+    
+    // ⭐ THAY ĐỔI: Hàm xử lý lỗi tập trung
+    function handleLoadError(error) {
+      console.error(error);
+      setDefaultDates();
+      document.getElementById('loading').textContent = 'Lỗi tải dữ liệu.';
+      document.getElementById('loadingWrite').textContent = 'Lỗi tải dữ liệu.';
+      document.getElementById('hanghoaList').innerHTML = `<div style="padding: 20px; text-align: center; color: #dc3545;">Lỗi tải dữ liệu.</div>`;
+    }
+
+    // ⭐ THAY ĐỔI: Hàm đặt ngày mặc định
+    function setDefaultDates() {
+      const today = new Date();
+      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+      const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      document.getElementById('startDate').valueAsDate = firstDay;
+      document.getElementById('endDate').valueAsDate = lastDay;
+      document.getElementById('hanghoaStartDate').valueAsDate = firstDay;
+      document.getElementById('hanghoaEndDate').valueAsDate = lastDay;
+    }
+
     function switchTab(tabName) {
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.getElementById(tabName).classList.add('active');
       event.target.classList.add('active');
       currentTab = tabName;
+
+      if (tabName === 'hanghoa' && !isHangHoaLoaded) {
+        loadHangHoa();
+      }
+      
       if (tabName === 'main') updateStatus();
     }
 
@@ -562,51 +623,6 @@
       }
     }
 
-    function loadAccounts() {
-      google.script.run.withSuccessHandler(accounts => {
-        allAccounts = accounts;
-        renderAccountList(allAccounts);
-        updateStatus();
-      }).withFailureHandler(err => {
-        document.getElementById('loading').textContent = 'Lỗi tải dữ liệu.';
-      }).getAccountsForSidebar();
-    }
-
-    function loadAllAccounts() {
-      google.script.run.withSuccessHandler(accounts => {
-        renderWriteAccountsList(accounts);
-      }).withFailureHandler(err => {
-        document.getElementById('loadingWrite').textContent = 'Lỗi tải dữ liệu.';
-      }).getAccountsForSidebar();
-    }
-
-    function loadReportDates() {
-      google.script.run.withSuccessHandler(dates => {
-        if (dates && dates.startDate && dates.endDate) {
-          document.getElementById('startDate').value = dates.startDate;
-          document.getElementById('endDate').value = dates.endDate;
-          document.getElementById('hanghoaStartDate').value = dates.startDate;
-          document.getElementById('hanghoaEndDate').value = dates.endDate;
-        } else {
-          const today = new Date();
-          const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-          const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-          document.getElementById('startDate').valueAsDate = firstDay;
-          document.getElementById('endDate').valueAsDate = lastDay;
-          document.getElementById('hanghoaStartDate').valueAsDate = firstDay;
-          document.getElementById('hanghoaEndDate').valueAsDate = lastDay;
-        }
-      }).withFailureHandler(err => {
-        const today = new Date();
-        const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-        const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        document.getElementById('startDate').valueAsDate = firstDay;
-        document.getElementById('endDate').valueAsDate = lastDay;
-        document.getElementById('hanghoaStartDate').valueAsDate = firstDay;
-        document.getElementById('hanghoaEndDate').valueAsDate = lastDay;
-      }).getReportDates();
-    }
-
     function loadHangHoa() {
       const loadingElement = document.getElementById('loadingHangHoa');
       if (loadingElement) loadingElement.style.display = 'block';
@@ -614,6 +630,7 @@
         if (Array.isArray(hangHoa)) {
           allHangHoa = hangHoa;
           renderHangHoaList(allHangHoa);
+          isHangHoaLoaded = true;
         } else {
           document.getElementById('hanghoaList').innerHTML = '<div style="padding: 20px; text-align: center; color: #5f6368;">Không có dữ liệu hàng hóa.</div>';
         }
@@ -760,13 +777,11 @@
       google.script.run.withSuccessHandler(() => showTempStatus('status', '✅ Đã tạo Sổ Chi Tiết', 'success')).withFailureHandler(err => showTempStatus('status', `❌ Lỗi: ${err}`, 'error')).taosochitiet(startDate, endDate, selectedAccounts);
     }
     
-    // ⭐ THAY ĐỔI: Thêm hàm mới để gọi Sổ Nhật Ký Chung
     function createNhatKyChung() {
       const startDate = document.getElementById('startDate').value;
       const endDate = document.getElementById('endDate').value;
       if (!startDate || !endDate) return alert('Vui lòng chọn kỳ báo cáo');
       saveReportDates(startDate, endDate);
-      // Sử dụng chung status với các báo cáo khác
       showTempStatus('status', `🔄 Đang tạo Nhật Ký Chung...`, 'loading');
       google.script.run.withSuccessHandler(() => showTempStatus('status', '✅ Đã tạo Nhật Ký Chung', 'success')).withFailureHandler(err => showTempStatus('status', `❌ Lỗi: ${err}`, 'error')).taoNhatKyChung(startDate, endDate);
     }
@@ -872,7 +887,6 @@
       }).taoNhapXuatTonFromSidebar(startDate, endDate, selectedItems, reportType);
     }
 
-    // ⭐⭐⭐ FIX: Updated showTempStatus function ⭐⭐⭐
     function showTempStatus(elementId, message, type) {
       const statusElement = document.getElementById(elementId);
       
@@ -895,12 +909,10 @@
 
       if (type !== 'loading') {
         setTimeout(() => {
-          // Reset styles to default
           statusElement.style.background = 'white';
           statusElement.style.borderColor = '#e8eaed';
           statusElement.style.color = '#5f6368';
           
-          // Update status with the correct selection count
           if (elementId === 'hanghoaStatus') {
             updateHangHoaStatus();
           } else if (elementId === 'status') {
@@ -911,13 +923,7 @@
         }, 4000);
       }
     }
-
-    window.onload = function() {
-      loadReportDates();
-      loadAccounts();
-      loadAllAccounts();
-      loadHangHoa();
-    };
   </script>
 </body>
 </html>
+
