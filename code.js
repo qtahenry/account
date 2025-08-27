@@ -245,6 +245,21 @@ const REPORT_COLUMN_CONFIGS = {
       'SO_LUONG': 'soLuong',
       'DON_GIA': 'donGia'
     }
+  },
+  // ⭐ THAY ĐỔI: Thêm config mới cho Nhật Ký Chung
+  NKC: {
+    required: ['NGAY_HT', 'TK_NO', 'TK_CO', 'SO_TIEN'],
+    mapping: {
+      'NGAY_HT': 'ngay',
+      'SO_CT': 'soCt',
+      'NGAY_CT': 'ngayCt',
+      'DIEN_GIAI': 'dienGiai',
+      'TK_NO': 'tkNo',
+      'TK_CO': 'tkCo',
+      'SO_TIEN': 'soTien',
+      'THUE_VAT': 'thueVAT',
+      'TK_THUE': 'tkThue'
+    }
   }
 };
 // HÀM ĐỌC DỮ LIỆU UNIVERSAL
@@ -2215,3 +2230,142 @@ function taoPhatSinhThue(tkThue, tkNo, tkCo, thueVAT, transGoc) {
   // Nếu không phải tài khoản thuế đặc biệt, trả về null
   return null;
 }
+
+/**
+ * ⭐ HÀM MỚI: Tạo báo cáo Sổ Nhật Ký Chung
+ */
+function taoNhatKyChung(startDateStr, endDateStr) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  try {
+    const ngayBatDau = new Date(startDateStr);
+    ngayBatDau.setHours(0, 0, 0, 0);
+    const ngayKetThuc = new Date(endDateStr);
+    ngayKetThuc.setHours(23, 59, 59, 999);
+
+    const sheetNKC = ss.getSheetByName('NKC');
+    if (!sheetNKC) {
+      throw new Error('Không tìm thấy sheet báo cáo "NKC". Vui lòng tạo sheet này.');
+    }
+
+    ss.toast('Đang đọc dữ liệu phát sinh...', 'Bước 1/4');
+    const dataResult = getAllDataFromDLSheets(ss, 'NKC', trans => {
+      const ngayGiaoDich = new Date(trans.ngay);
+      return ngayGiaoDich >= ngayBatDau && ngayGiaoDich <= ngayKetThuc;
+    });
+    const transactions = dataResult.data;
+
+    ss.toast('Đang xử lý bút toán...', 'Bước 2/4');
+    const journalEntries = [];
+    let tongPsNo = 0; // ⭐ THAY ĐỔI: Biến tính tổng Nợ
+    let tongPsCo = 0; // ⭐ THAY ĐỔI: Biến tính tổng Có
+
+    for (const trans of transactions) {
+      // Bút toán chính
+      if (trans.soTien > 0) {
+        journalEntries.push({
+          ngayGhiSo: new Date(trans.ngay), soCt: trans.soCt || '', ngayCt: trans.ngayCt ? new Date(trans.ngayCt) : '',
+          dienGiai: trans.dienGiai || '', tkNo: trans.tkNo, tkCo: trans.tkCo, psNo: trans.soTien, psCo: 0
+        });
+        journalEntries.push({
+          ngayGhiSo: new Date(trans.ngay), soCt: trans.soCt || '', ngayCt: trans.ngayCt ? new Date(trans.ngayCt) : '',
+          dienGiai: trans.dienGiai || '', tkNo: trans.tkCo, tkCo: trans.tkNo, psNo: 0, psCo: trans.soTien
+        });
+        // ⭐ THAY ĐỔI: Cộng dồn vào tổng
+        tongPsNo += trans.soTien;
+        tongPsCo += trans.soTien;
+      }
+
+      // Bút toán thuế
+      if (trans.thueVAT > 0 && trans.tkThue) {
+        const dienGiaiThue = `Thuế GTGT của ${trans.dienGiai || 'CT ' + trans.soCt}`;
+        if (['1331', '1332'].includes(trans.tkThue)) { // Thuế đầu vào
+          journalEntries.push({
+            ngayGhiSo: new Date(trans.ngay), soCt: trans.soCt || '', ngayCt: trans.ngayCt ? new Date(trans.ngayCt) : '',
+            dienGiai: dienGiaiThue, tkNo: trans.tkThue, tkCo: trans.tkCo, psNo: trans.thueVAT, psCo: 0
+          });
+          journalEntries.push({
+            ngayGhiSo: new Date(trans.ngay), soCt: trans.soCt || '', ngayCt: trans.ngayCt ? new Date(trans.ngayCt) : '',
+            dienGiai: dienGiaiThue, tkNo: trans.tkCo, tkCo: trans.tkThue, psNo: 0, psCo: trans.thueVAT
+          });
+        } else if (['33311', '33312'].includes(trans.tkThue)) { // Thuế đầu ra
+          journalEntries.push({
+            ngayGhiSo: new Date(trans.ngay), soCt: trans.soCt || '', ngayCt: trans.ngayCt ? new Date(trans.ngayCt) : '',
+            dienGiai: dienGiaiThue, tkNo: trans.tkNo, tkCo: trans.tkThue, psNo: trans.thueVAT, psCo: 0
+          });
+          journalEntries.push({
+            ngayGhiSo: new Date(trans.ngay), soCt: trans.soCt || '', ngayCt: trans.ngayCt ? new Date(trans.ngayCt) : '',
+            dienGiai: dienGiaiThue, tkNo: trans.tkThue, tkCo: trans.tkNo, psNo: 0, psCo: trans.thueVAT
+          });
+        }
+        // ⭐ THAY ĐỔI: Cộng dồn vào tổng
+        tongPsNo += trans.thueVAT;
+        tongPsCo += trans.thueVAT;
+      }
+    }
+
+    ss.toast('Đang sắp xếp dữ liệu...', 'Bước 3/4');
+    journalEntries.sort((a, b) => a.ngayGhiSo - b.ngayGhiSo || (a.soCt || '').localeCompare(b.soCt || ''));
+
+    const outputData = journalEntries.map(e => [
+      e.ngayGhiSo, e.soCt, e.ngayCt, e.dienGiai, e.tkNo, e.tkCo, e.psNo, e.psCo
+    ]);
+
+    ss.toast('Đang ghi và định dạng báo cáo...', 'Bước 4/4');
+    sheetNKC.clear();
+    
+    const title = `SỔ NHẬT KÝ CHUNG`;
+    const subtitle = `Từ ngày ${ngayBatDau.toLocaleDateString('vi-VN')} đến ngày ${ngayKetThuc.toLocaleDateString('vi-VN')}`;
+    sheetNKC.getRange("A1").setValue(title).setFontWeight('bold').setFontSize(14).setHorizontalAlignment('center');
+    sheetNKC.getRange("A2").setValue(subtitle).setFontStyle('italic').setHorizontalAlignment('center');
+    sheetNKC.getRange("A1:H1").merge();
+    sheetNKC.getRange("A2:H2").merge();
+
+    const headers = [['Ngày ghi sổ', 'Số CT', 'Ngày CT', 'Diễn giải', 'TK Nợ', 'TK Có', 'Phát sinh Nợ', 'Phát sinh Có']];
+    sheetNKC.getRange(4, 1, 1, 8).setValues(headers).setFontWeight('bold').setBackground('#4a86e8').setFontColor('white').setHorizontalAlignment('center');
+    
+    if (outputData.length > 0) {
+      const dataStartRow = 5;
+      sheetNKC.getRange(dataStartRow, 1, outputData.length, 8).setValues(outputData);
+      
+      const totalRow = dataStartRow + outputData.length;
+      sheetNKC.getRange(totalRow, 4).setValue('Cộng phát sinh').setFontWeight('bold').setHorizontalAlignment('right');
+      // ⭐ THAY ĐỔI: Ghi thẳng giá trị đã tính toán, không dùng công thức
+      sheetNKC.getRange(totalRow, 7).setValue(tongPsNo).setFontWeight('bold');
+      sheetNKC.getRange(totalRow, 8).setValue(tongPsCo).setFontWeight('bold');
+      
+      const allRange = sheetNKC.getRange(4, 1, outputData.length + 1, 8);
+      allRange.setBorder(true, true, true, true, true, true).setVerticalAlignment('middle');
+      sheetNKC.getRange(dataStartRow, 1, outputData.length, 1).setNumberFormat("dd/MM/yyyy");
+      sheetNKC.getRange(dataStartRow, 3, outputData.length, 1).setNumberFormat("dd/MM/yyyy");
+      sheetNKC.getRange(dataStartRow, 7, outputData.length + 1, 2).setNumberFormat("#,##0;(#,##0);");
+      sheetNKC.getRange(4, 1, outputData.length + 1, 8).setWrap(true);
+      sheetNKC.autoResizeColumns(1, 8);
+    }
+
+    ss.toast('Hoàn thành!', 'Thành công', 5);
+    return { success: true };
+
+  } catch (e) {
+    console.error("LỖI TẠO NHẬT KÝ CHUNG: " + e.toString() + e.stack);
+    throw new Error('Lỗi khi tạo báo cáo: ' + e.toString());
+  }
+}
+
+function getInitialSidebarData() {
+  try {
+    // Gọi các hàm lấy dữ liệu khác ngay trên server
+    const dates = getReportDates();
+    const accounts = getAccountsForSidebar();
+    
+    // Trả về một đối tượng duy nhất chứa tất cả dữ liệu cần thiết khi khởi động
+    return {
+      dates: dates,
+      accounts: accounts,
+    };
+  } catch (e) {
+    console.error("Lỗi khi lấy dữ liệu khởi tạo cho sidebar: " + e.toString());
+    // Trả về một đối tượng lỗi để client có thể xử lý
+    return { error: e.toString() };
+  }
+}
+
