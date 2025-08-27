@@ -260,6 +260,17 @@ const REPORT_COLUMN_CONFIGS = {
       'THUE_VAT': 'thueVAT',
       'TK_THUE': 'tkThue'
     }
+  },
+  BC_BANHANG: {
+    required: ['NGAY_HT', 'MA_KHO', 'MA_HANG', 'CO_SO', 'SO_LUONG', 'SO_TIEN'],
+    mapping: {
+      'NGAY_HT': 'ngay',
+      'MA_KHO': 'maKho',
+      'MA_HANG': 'maHang',
+      'CO_SO': 'coSo',
+      'SO_LUONG': 'soLuong',
+      'SO_TIEN': 'soTien'
+    }
   }
 };
 // HÀM ĐỌC DỮ LIỆU UNIVERSAL
@@ -2366,6 +2377,241 @@ function getInitialSidebarData() {
     console.error("Lỗi khi lấy dữ liệu khởi tạo cho sidebar: " + e.toString());
     // Trả về một đối tượng lỗi để client có thể xử lý
     return { error: e.toString() };
+  }
+}
+
+/**
+ * ⭐ HÀM MỚI: Tạo Báo cáo Bán hàng theo Đơn hàng
+ * CẬP NHẬT: Điều chỉnh lại bố cục và đảm bảo tính toán thuế chính xác
+ */
+function taoBaoCaoBanHang(startDateStr, endDateStr, selectedDonHang) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  try {
+    const ngayBatDau = new Date(startDateStr);
+    ngayBatDau.setHours(0, 0, 0, 0);
+    const ngayKetThuc = new Date(endDateStr);
+    ngayKetThuc.setHours(23, 59, 59, 999);
+
+    ss.toast('Đang đọc dữ liệu...', 'Bước 1/4');
+    const sheetDMDH = ss.getSheetByName('DMDONHANG');
+    const sheetBCBH = ss.getSheetByName('BC_BANHANG');
+    if (!sheetDMDH || !sheetBCBH) throw new Error('Không tìm thấy sheet DMDONHANG hoặc BC_BANHANG');
+
+    const allDonHangData = sheetDMDH.getDataRange().getValues();
+    const allGiaoDich = getAllDataFromDLSheets(ss, 'BC_BANHANG').data;
+
+    ss.toast('Đang lọc đơn hàng...', 'Bước 2/4');
+    const donHangCoPhatSinhTrongKy = new Set();
+    let tongSoLuongToanKy = 0;
+    let tongThanhTienToanKy = 0;
+
+    for (const gd of allGiaoDich) {
+      const ngayGiaoDich = new Date(gd.ngay);
+      if (ngayGiaoDich >= ngayBatDau && ngayGiaoDich <= ngayKetThuc) {
+        const key = `${gd.maKho}|${gd.maHang}`;
+        donHangCoPhatSinhTrongKy.add(key);
+        if (selectedDonHang.length === 0 || selectedDonHang.includes(key)) {
+            tongSoLuongToanKy += gd.soLuong;
+            tongThanhTienToanKy += gd.soTien + (gd.thueVat || 0);
+        }
+      }
+    }
+
+    ss.toast('Đang tổng hợp dữ liệu...', 'Bước 3/4');
+    const reportDataMap = new Map();
+    const headerDMDH = allDonHangData[0].map(h => h.toString().trim().toUpperCase());
+    
+    const sizeCols = headerDMDH.map((h, i) => h.startsWith('SIZE') ? { index: i, name: h } : null).filter(Boolean);
+    const slCols = headerDMDH.map((h, i) => h.startsWith('SL') ? { index: i, name: h } : null).filter(Boolean);
+
+    for (let i = 1; i < allDonHangData.length; i++) {
+      const row = allDonHangData[i];
+      const maKho = row[headerDMDH.indexOf('MA_KHO')];
+      const maHang = row[headerDMDH.indexOf('MA_HANG')];
+      const key = `${maKho}|${maHang}`;
+
+      const isSelected = selectedDonHang.length === 0 || selectedDonHang.includes(key);
+
+      if (isSelected && donHangCoPhatSinhTrongKy.has(key)) {
+        const donHang = {
+          info: [maKho, maHang, row[headerDMDH.indexOf('TEN_HANG')], row[headerDMDH.indexOf('QUY_CACH')], row[headerDMDH.indexOf('DVT')]],
+          soKeHoach: parseFloat(row[headerDMDH.indexOf('SO_KE_HOACH')]) || 0,
+          sizes: [],
+          slKeHoach: [],
+          slTruocKy: [],
+          slTrongKy: [],
+          thanhTienTrongKy: 0,
+          thueTrongKy: 0,
+          sizeMap: new Map()
+        };
+        
+        for(let j = 0; j < sizeCols.length; j++) {
+            const sizeName = row[sizeCols[j].index];
+            const slKeHoach = parseFloat(row[slCols[j].index]) || 0;
+            if(sizeName) {
+                donHang.sizes.push(sizeName);
+                donHang.slKeHoach.push(slKeHoach);
+                donHang.slTruocKy.push(0);
+                donHang.slTrongKy.push(0);
+                donHang.sizeMap.set(sizeName.toString(), j);
+            }
+        }
+        reportDataMap.set(key, donHang);
+      }
+    }
+
+    for (const gd of allGiaoDich) {
+      const key = `${gd.maKho}|${gd.maHang}`;
+      if (reportDataMap.has(key)) {
+        const donHang = reportDataMap.get(key);
+        const sizeIndex = donHang.sizeMap.get(gd.coSo.toString());
+        if (sizeIndex !== undefined) {
+          const ngayGiaoDich = new Date(gd.ngay);
+          if (ngayGiaoDich < ngayBatDau) {
+            donHang.slTruocKy[sizeIndex] += gd.soLuong;
+          } else if (ngayGiaoDich <= ngayKetThuc) {
+            donHang.slTrongKy[sizeIndex] += gd.soLuong;
+            donHang.thanhTienTrongKy += gd.soTien;
+            donHang.thueTrongKy += gd.thueVat || 0;
+          }
+        }
+      }
+    }
+
+    ss.toast('Đang ghi báo cáo...', 'Bước 4/4');
+    sheetBCBH.clear();
+    
+    let maxSizes = 0;
+    for (const [key, donHang] of reportDataMap.entries()) {
+        if (donHang.sizes.length > maxSizes) maxSizes = donHang.sizes.length;
+    }
+    const maxCols = 10 + maxSizes;
+
+    const title = `BÁO CÁO BÁN HÀNG THEO ĐƠN HÀNG`;
+    const subtitle = `Từ ngày ${ngayBatDau.toLocaleDateString('vi-VN')} đến ngày ${ngayKetThuc.toLocaleDateString('vi-VN')}`;
+    sheetBCBH.getRange("A1").setValue(title).setFontWeight('bold').setFontSize(14).setHorizontalAlignment('center');
+    sheetBCBH.getRange("A2").setValue(subtitle).setFontStyle('italic').setHorizontalAlignment('center');
+    sheetBCBH.getRange(1, 1, 1, maxCols).merge();
+    sheetBCBH.getRange(2, 1, 1, maxCols).merge();
+    
+    sheetBCBH.getRange("A3").setValue('Tổng phát sinh trong kỳ:').setFontWeight('bold').setHorizontalAlignment('right');
+    sheetBCBH.getRange("B3").setValue(tongSoLuongToanKy).setFontWeight('bold');
+    sheetBCBH.getRange("C3").setValue(tongThanhTienToanKy).setFontWeight('bold');
+    sheetBCBH.getRange("A3:E3").merge();
+    sheetBCBH.getRange("B3").setNumberFormat("#,##0;(#,##0);");
+    sheetBCBH.getRange("C3").setNumberFormat("#,##0;(#,##0);");
+
+    const mainHeader = [['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'Đơn vị tính', 'Tổng SL', 'Đơn Giá', 'Thành Tiền', 'Thuế VAT', 'Tổng Tiền', 'Cỡ số']];
+    sheetBCBH.getRange(5, 1, 1, 11).setValues(mainHeader);
+    if (maxSizes > 1) {
+      sheetBCBH.getRange(5, 11, 1, maxSizes).merge();
+    }
+    sheetBCBH.getRange(5, 1, 1, maxCols).setFontWeight('bold').setBackground('#4a86e8').setFontColor('white').setHorizontalAlignment('center');
+
+    let currentRow = 6;
+
+    for (let i = 1; i < allDonHangData.length; i++) {
+        const row = allDonHangData[i];
+        const maKho = row[headerDMDH.indexOf('MA_KHO')];
+        const maHang = row[headerDMDH.indexOf('MA_HANG')];
+        const key = `${maKho}|${maHang}`;
+
+        if(reportDataMap.has(key)) {
+            const donHang = reportDataMap.get(key);
+            const numInfoCols = donHang.info.length; // 5
+            const numSizes = donHang.sizes.length;
+            
+            let tongSlTrongKy = donHang.slTrongKy.reduce((a, b) => a + b, 0);
+            let tongSlTruocKy = donHang.slTruocKy.reduce((a, b) => a + b, 0);
+            let thanhTienTrongKy = donHang.thanhTienTrongKy;
+            let thueTrongKy = donHang.thueTrongKy;
+            let tongTien = thanhTienTrongKy + thueTrongKy;
+            let donGia = (tongSlTrongKy > 0) ? (thanhTienTrongKy / tongSlTrongKy) : 0;
+
+            // ⭐ THAY ĐỔI: Cấu trúc khối dữ liệu mới (4 dòng)
+            const blockData = [
+                // Dòng 1: Thông tin và tên các size
+                [...donHang.info, '', '', '', '', '', ...donHang.sizes],
+                // Dòng 2: SL Kế hoạch
+                ['', '', 'SL Kế hoạch', '', '', donHang.soKeHoach, '', '', '', '', ...donHang.slKeHoach],
+                // Dòng 3: SL Trước kỳ
+                ['', '', 'SL đã báo cáo kỳ trước', '', '', tongSlTruocKy, '', '', '', '', ...donHang.slTruocKy],
+                // Dòng 4: SL Trong kỳ
+                ['', '', 'SL phát sinh kỳ này', '', '', tongSlTrongKy, donGia, thanhTienTrongKy, thueTrongKy, tongTien, ...donHang.slTrongKy]
+            ];
+            
+            const blockTotalCols = numInfoCols + 5 + numSizes;
+            sheetBCBH.getRange(currentRow, 1, 4, blockTotalCols).setValues(blockData);
+
+            // Định dạng khối
+            const blockRange = sheetBCBH.getRange(currentRow, 1, 4, blockTotalCols);
+            blockRange.setBorder(true, true, true, true, true, true);
+            sheetBCBH.getRange(currentRow, 1, 1, numInfoCols).setFontWeight('bold');
+            sheetBCBH.getRange(currentRow, numInfoCols + 6, 1, numSizes).setHorizontalAlignment('center');
+            sheetBCBH.getRange(currentRow + 1, 3, 3, 1).setFontWeight('bold').setHorizontalAlignment('right'); // ⭐ THAY ĐỔI: In đậm và căn phải các nhãn SL
+            
+            // Định dạng số
+            const slFormat = "#,##0;(#,##0);";
+            const tienFormat = "#,##0;(#,##0);";
+            const numTotalCols = 5;
+            
+            sheetBCBH.getRange(currentRow + 1, numInfoCols + 1, 1, 1).setNumberFormat(slFormat);
+            sheetBCBH.getRange(currentRow + 1, numInfoCols + numTotalCols + 1, 1, numSizes).setNumberFormat(slFormat);
+            
+            sheetBCBH.getRange(currentRow + 2, numInfoCols + 1, 1, 1).setNumberFormat(slFormat);
+            sheetBCBH.getRange(currentRow + 2, numInfoCols + numTotalCols + 1, 1, numSizes).setNumberFormat(slFormat);
+
+            sheetBCBH.getRange(currentRow + 3, numInfoCols + 1, 1, 1).setNumberFormat(slFormat);
+            sheetBCBH.getRange(currentRow + 3, numInfoCols + 2, 1, 4).setNumberFormat(tienFormat);
+            sheetBCBH.getRange(currentRow + 3, numInfoCols + numTotalCols + 1, 1, numSizes).setNumberFormat(slFormat);
+            
+            currentRow += 5;
+        }
+    }
+    
+    if (maxCols > 8) {
+      sheetBCBH.autoResizeColumns(1, maxCols);
+    }
+
+    ss.toast('Hoàn thành!', 'Thành công', 5);
+    return { success: true };
+
+  } catch (e) {
+    console.error("LỖI TẠO BÁO CÁO BÁN HÀNG: " + e.toString() + e.stack);
+    throw new Error('Lỗi khi tạo báo cáo: ' + e.toString());
+  }
+}
+
+/**
+ * ⭐ HÀM MỚI: Lấy danh sách đơn hàng cho sidebar
+ */
+function getDonHangForSidebar() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetDMDH = ss.getSheetByName('DMDONHANG');
+    if (!sheetDMDH) return [];
+
+    const data = sheetDMDH.getDataRange().getValues();
+    const donHangList = [];
+    const header = data[0].map(h => h.toString().trim().toUpperCase());
+    const maKhoIndex = header.indexOf('MA_KHO');
+    const maHangIndex = header.indexOf('MA_HANG');
+    const tenHangIndex = header.indexOf('TEN_HANG');
+
+    for (let i = 1; i < data.length; i++) {
+      const maKho = data[i][maKhoIndex];
+      const maHang = data[i][maHangIndex];
+      if (maKho && maHang) {
+        donHangList.push({ 
+          id: `${maKho}|${maHang}`, 
+          ten: data[i][tenHangIndex] || `${maKho} - ${maHang}`
+        });
+      }
+    }
+    return donHangList;
+  } catch (e) {
+    console.error("Lỗi khi lấy danh sách đơn hàng: " + e.toString());
+    return [];
   }
 }
 
