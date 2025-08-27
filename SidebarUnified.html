@@ -49,7 +49,7 @@
     }
     
     .section {
-      margin-bottom: 12px;
+      margin-bottom: 20px;
     }
     
     .section-title {
@@ -60,6 +60,8 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      border-bottom: 1px solid #e0e0e0;
+      padding-bottom: 5px;
     }
     
     .date-inputs {
@@ -140,7 +142,7 @@
       border-color: #4285f4;
     }
     
-    .account-list {
+    .account-list, .hanghoa-list {
       max-height: 245px;
       overflow-y: auto;
       background: white;
@@ -149,7 +151,7 @@
       border: 1px solid #dadce0;
     }
     
-    .account-item {
+    .account-item, .hanghoa-item {
       display: flex;
       align-items: flex-start;
       padding: 10px 12px;
@@ -157,11 +159,11 @@
       transition: background-color 0.15s;
     }
     
-    .account-item:last-child {
+    .account-item:last-child, .hanghoa-item:last-child {
       border-bottom: none;
     }
     
-    .account-item:hover {
+    .account-item:hover, .hanghoa-item:hover {
       background-color: #f1f3f4;
     }
     
@@ -254,35 +256,7 @@
       color: #1a73e8;
     }
 
-    .hanghoa-list {
-      max-height: 300px;
-      overflow-y: auto;
-      background: white;
-      border-radius: 8px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      border: 1px solid #dadce0;
-    }
-
-    .hanghoa-item {
-      display: flex;
-      align-items: flex-start;
-      padding: 10px 12px;
-      border-bottom: 1px solid #f0f0f0;
-      transition: background-color 0.15s;
-    }
-
-    .hanghoa-item:last-child {
-      border-bottom: none;
-    }
-
-    .hanghoa-item:hover {
-      background-color: #e6f4ea;
-    }
-
     .hanghoa-item input[type="checkbox"] {
-      margin-right: 12px;
-      margin-top: 4px;
-      transform: scale(1.1);
       accent-color: #34a853;
     }
 
@@ -376,8 +350,6 @@
 </head>
 <body>
 
-
-  <!-- ⭐ THAY ĐỔI: Thêm tab mới -->
   <div class="tab-container">
     <button class="tab active" onclick="switchTab('main')">📊 Báo Cáo Kế Toán</button>
     <button class="tab" onclick="switchTab('hanghoa')">📦 Báo Cáo Kho</button>
@@ -521,13 +493,12 @@
       </div>
     </div>
 
-
     <div class="status" id="hanghoaStatus" style="display:none;">Đã chọn: 0 hàng hóa</div>
   </div>
   
-    <!-- ⭐ THAY ĐỔI: Thêm nội dung cho tab mới -->
   <div id="donhang" class="tab-content">
     <div class="section">
+      <div class="section-title">📈 Báo cáo theo Đơn hàng đã chọn</div>
       <div class="search-box">
         <input type="text" id="donHangSearchInput" class="search-input" placeholder="🔍 Tìm theo mã hoặc tên đơn hàng..." oninput="filterDonHang();">
         <span class="clear-search" id="clearDonHangSearch" onclick="clearDonHangSearch()" title="Xóa tìm kiếm">✕</span>
@@ -535,7 +506,6 @@
     </div>
 
     <div class="section">
-      <div class="section-title">📑 Danh Sách Đơn Hàng</div>
       <div class="select-all-controls">
         <button class="btn-small" onclick="selectAllDonHang()">✅ Chọn Tất Cả</button>
         <button class="btn-small" onclick="deselectAllDonHang()">❌ Bỏ Chọn Tất Cả</button>
@@ -546,7 +516,6 @@
     </div>
 
     <div class="section">
-      <div class="section-title">📅 Kỳ Báo Cáo</div>
       <div class="date-inputs">
         <div>
           <label for="donHangStartDate">Từ ngày</label>
@@ -557,14 +526,31 @@
           <input type="date" id="donHangEndDate">
         </div>
       </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">📊 Tạo Báo Cáo</div>
        <div class="actions">
         <button class="btn btn-primary" onclick="createBaoCaoBanHang()">📈 Tạo Báo Cáo Bán Hàng</button>
       </div>
     </div>
+
+    <!-- ⭐ KHU VỰC ĐÃ ĐƯỢC CẬP NHẬT ⭐ -->
+    <div class="section">
+      <div class="section-title">📄 In Phiếu Bán Hàng</div>
+      <div style="margin-bottom: 8px;">
+        <label for="soChungTuInput">Nhập Số Chứng Từ</label>
+        <input type="text" id="soChungTuInput" placeholder="Ví dụ: PXK001">
+      </div>
+      <div style="margin-bottom: 15px; font-size: 13px;">
+        <label style="display: block; margin-bottom: 5px;">
+          <input type="radio" name="reportType" value="FULL" checked> In phiếu đầy đủ (có giá tiền)
+        </label>
+        <label style="display: block;">
+          <input type="radio" name="reportType" value="QUANTITY_ONLY"> In phiếu kho (chỉ có số lượng)
+        </label>
+      </div>
+      <div class="actions">
+        <button class="btn btn-secondary" style="background-color: #ea4335;" onclick="printPhieuBanHang()">🖨️ In Phiếu</button>
+      </div>
+    </div>
+    <!-- ⭐ KẾT THÚC KHU VỰC CẬP NHẬT ⭐ -->
 
     <div class="status" id="donHangStatus" style="display:none;">Đã chọn: 0 đơn hàng</div>
   </div>
@@ -578,7 +564,6 @@
     let allHangHoa = [];
     let selectedHangHoaIds = new Set();
     
-    // ⭐ THAY ĐỔI: Thêm biến cho đơn hàng
     let allDonHang = [];
     let selectedDonHangIds = [];
     let isDonHangLoaded = false;
@@ -587,29 +572,27 @@
 
     let isHangHoaLoaded = false;
 
-    // ⭐ THAY ĐỔI: Chỉ còn một lệnh gọi duy nhất khi tải
     window.onload = function() {
       google.script.run.withSuccessHandler(handleInitialData).withFailureHandler(handleLoadError).getInitialSidebarData();
     };
 
-    // ⭐ THAY ĐỔI: Hàm mới để xử lý dữ liệu trả về
     function handleInitialData(data) {
       if (data.error) {
         handleLoadError(data.error);
         return;
       }
 
-      // Xử lý ngày tháng
       if (data.dates && data.dates.startDate && data.dates.endDate) {
         document.getElementById('startDate').value = data.dates.startDate;
         document.getElementById('endDate').value = data.dates.endDate;
         document.getElementById('hanghoaStartDate').value = data.dates.startDate;
         document.getElementById('hanghoaEndDate').value = data.dates.endDate;
+        document.getElementById('donHangStartDate').value = data.dates.startDate;
+        document.getElementById('donHangEndDate').value = data.dates.endDate;
       } else {
         setDefaultDates();
       }
 
-      // Xử lý danh sách tài khoản
       if (data.accounts) {
         allAccounts = data.accounts;
         renderAccountList(allAccounts);
@@ -621,7 +604,6 @@
       }
     }
     
-    // ⭐ THAY ĐỔI: Hàm xử lý lỗi tập trung
     function handleLoadError(error) {
       console.error(error);
       setDefaultDates();
@@ -630,7 +612,6 @@
       document.getElementById('hanghoaList').innerHTML = `<div style="padding: 20px; text-align: center; color: #dc3545;">Lỗi tải dữ liệu.</div>`;
     }
 
-    // ⭐ THAY ĐỔI: Hàm đặt ngày mặc định
     function setDefaultDates() {
       const today = new Date();
       const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -639,7 +620,6 @@
       document.getElementById('endDate').valueAsDate = lastDay;
       document.getElementById('hanghoaStartDate').valueAsDate = firstDay;
       document.getElementById('hanghoaEndDate').valueAsDate = lastDay;
-      // ⭐ THAY ĐỔI: Thêm ngày cho tab đơn hàng
       document.getElementById('donHangStartDate').valueAsDate = firstDay;
       document.getElementById('donHangEndDate').valueAsDate = lastDay;
     }
@@ -654,7 +634,6 @@
       if (tabName === 'hanghoa' && !isHangHoaLoaded) {
         loadHangHoa();
       }
-      // ⭐ THAY ĐỔI: Tải "lười" cho tab đơn hàng
       if (tabName === 'donhang' && !isDonHangLoaded) {
         loadDonHang();
       }
@@ -913,16 +892,16 @@
 
     function selectAllHangHoa() {
       allHangHoa.forEach(item => selectedHangHoaIds.add(item.uniqueId));
-      renderHangHoaList(allHangHoa); // Re-render to check all boxes
+      renderHangHoaList(allHangHoa);
       updateHangHoaStatus();
     }
 
     function deselectAllHangHoa() {
       selectedHangHoaIds.clear();
-      renderHangHoaList(allHangHoa); // Re-render to uncheck all boxes
+      renderHangHoaList(allHangHoa);
       updateHangHoaStatus();
     }
-    // ⭐ THAY ĐỔI: Thêm các hàm mới cho Đơn Hàng
+
     function loadDonHang() {
       const loadingElement = document.getElementById('loadingDonHang');
       if (loadingElement) loadingElement.style.display = 'block';
@@ -1002,16 +981,33 @@
       const startDate = document.getElementById('donHangStartDate').value;
       const endDate = document.getElementById('donHangEndDate').value;
       if (!startDate || !endDate) return alert('Vui lòng chọn kỳ báo cáo');
-      
       saveReportDates(startDate, endDate);
-      
       showTempStatus('donHangStatus', `🔄 Đang tạo Báo cáo Bán hàng...`, 'loading');
-      
       google.script.run.withSuccessHandler(() => {
         showTempStatus('donHangStatus', `✅ Đã tạo Báo cáo Bán hàng`, 'success');
       }).withFailureHandler(error => {
         showTempStatus('donHangStatus', `❌ Lỗi: ${error}`, 'error');
       }).taoBaoCaoBanHang(startDate, endDate, selectedDonHangIds);
+    }
+    
+    // ⭐ HÀM ĐÃ ĐƯỢC CẬP NHẬT ⭐
+    function printPhieuBanHang() {
+      const soChungTu = document.getElementById('soChungTuInput').value.trim();
+      if (!soChungTu) {
+        return alert('Vui lòng nhập Số Chứng Từ.');
+      }
+      // Lấy loại báo cáo đã chọn
+      const reportType = document.querySelector('input[name="reportType"]:checked').value;
+
+      showTempStatus('donHangStatus', `🔄 Đang tạo phiếu cho ${soChungTu}...`, 'loading');
+      google.script.run
+        .withSuccessHandler(() => {
+          showTempStatus('donHangStatus', `✅ Đã tạo phiếu ${soChungTu}`, 'success');
+        })
+        .withFailureHandler(error => {
+          showTempStatus('donHangStatus', `❌ Lỗi: ${error.message}`, 'error');
+        })
+        .inPhieuBanHang(soChungTu, reportType); // Truyền thêm tham số reportType
     }
 
     function createNhapXuatTon(reportType = 'ALL') {
@@ -1068,6 +1064,8 @@
             updateStatus();
           } else if (elementId === 'writeStatus') {
             updateWriteStatus();
+          } else if (elementId === 'donHangStatus') {
+            updateDonHangStatus();
           }
         }, 4000);
       }
