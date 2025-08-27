@@ -269,7 +269,9 @@ const REPORT_COLUMN_CONFIGS = {
       'MA_HANG': 'maHang',
       'CO_SO': 'coSo',
       'SO_LUONG': 'soLuong',
-      'SO_TIEN': 'soTien'
+      'SO_TIEN': 'soTien',
+      // ⭐ THAY ĐỔI: Sửa lại tên thuộc tính cho nhất quán
+      'THUE_VAT': 'thueVAT'
     }
   }
 };
@@ -2382,7 +2384,7 @@ function getInitialSidebarData() {
 
 /**
  * ⭐ HÀM MỚI: Tạo Báo cáo Bán hàng theo Đơn hàng
- * CẬP NHẬT: Điều chỉnh lại bố cục và đảm bảo tính toán thuế chính xác
+ * CẬP NHẬT: Sửa lỗi "Số cột không khớp"
  */
 function taoBaoCaoBanHang(startDateStr, endDateStr, selectedDonHang) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -2400,19 +2402,22 @@ function taoBaoCaoBanHang(startDateStr, endDateStr, selectedDonHang) {
     const allDonHangData = sheetDMDH.getDataRange().getValues();
     const allGiaoDich = getAllDataFromDLSheets(ss, 'BC_BANHANG').data;
 
-    ss.toast('Đang lọc đơn hàng...', 'Bước 2/4');
+    ss.toast('Đang lọc và tính tổng...', 'Bước 2/4');
     const donHangCoPhatSinhTrongKy = new Set();
     let tongSoLuongToanKy = 0;
-    let tongThanhTienToanKy = 0;
+    let tongSoTienToanKy = 0;
+    let tongThueToanKy = 0;
 
     for (const gd of allGiaoDich) {
       const ngayGiaoDich = new Date(gd.ngay);
       if (ngayGiaoDich >= ngayBatDau && ngayGiaoDich <= ngayKetThuc) {
         const key = `${gd.maKho}|${gd.maHang}`;
         donHangCoPhatSinhTrongKy.add(key);
+        
         if (selectedDonHang.length === 0 || selectedDonHang.includes(key)) {
             tongSoLuongToanKy += gd.soLuong;
-            tongThanhTienToanKy += gd.soTien + (gd.thueVat || 0);
+            tongSoTienToanKy += gd.soTien;
+            tongThueToanKy += gd.thueVAT || 0;
         }
       }
     }
@@ -2435,6 +2440,7 @@ function taoBaoCaoBanHang(startDateStr, endDateStr, selectedDonHang) {
       if (isSelected && donHangCoPhatSinhTrongKy.has(key)) {
         const donHang = {
           info: [maKho, maHang, row[headerDMDH.indexOf('TEN_HANG')], row[headerDMDH.indexOf('QUY_CACH')], row[headerDMDH.indexOf('DVT')]],
+          ghiChu: row[headerDMDH.indexOf('GHI_CHU')] || '',
           soKeHoach: parseFloat(row[headerDMDH.indexOf('SO_KE_HOACH')]) || 0,
           sizes: [],
           slKeHoach: [],
@@ -2472,7 +2478,7 @@ function taoBaoCaoBanHang(startDateStr, endDateStr, selectedDonHang) {
           } else if (ngayGiaoDich <= ngayKetThuc) {
             donHang.slTrongKy[sizeIndex] += gd.soLuong;
             donHang.thanhTienTrongKy += gd.soTien;
-            donHang.thueTrongKy += gd.thueVat || 0;
+            donHang.thueTrongKy += gd.thueVAT || 0;
           }
         }
       }
@@ -2485,28 +2491,31 @@ function taoBaoCaoBanHang(startDateStr, endDateStr, selectedDonHang) {
     for (const [key, donHang] of reportDataMap.entries()) {
         if (donHang.sizes.length > maxSizes) maxSizes = donHang.sizes.length;
     }
-    const maxCols = 10 + maxSizes;
+    const maxCols = 11 + maxSizes; 
 
-    const title = `BÁO CÁO BÁN HÀNG THEO ĐƠN HÀNG`;
+    const title = `BÁO CÁO BÁN HÀNG CHI TIET THEO ĐƠN HÀNG`;
     const subtitle = `Từ ngày ${ngayBatDau.toLocaleDateString('vi-VN')} đến ngày ${ngayKetThuc.toLocaleDateString('vi-VN')}`;
     sheetBCBH.getRange("A1").setValue(title).setFontWeight('bold').setFontSize(14).setHorizontalAlignment('center');
     sheetBCBH.getRange("A2").setValue(subtitle).setFontStyle('italic').setHorizontalAlignment('center');
     sheetBCBH.getRange(1, 1, 1, maxCols).merge();
     sheetBCBH.getRange(2, 1, 1, maxCols).merge();
     
-    sheetBCBH.getRange("A3").setValue('Tổng phát sinh trong kỳ:').setFontWeight('bold').setHorizontalAlignment('right');
-    sheetBCBH.getRange("B3").setValue(tongSoLuongToanKy).setFontWeight('bold');
-    sheetBCBH.getRange("C3").setValue(tongThanhTienToanKy).setFontWeight('bold');
-    sheetBCBH.getRange("A3:E3").merge();
-    sheetBCBH.getRange("B3").setNumberFormat("#,##0;(#,##0);");
-    sheetBCBH.getRange("C3").setNumberFormat("#,##0;(#,##0);");
-
-    const mainHeader = [['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'Đơn vị tính', 'Tổng SL', 'Đơn Giá', 'Thành Tiền', 'Thuế VAT', 'Tổng Tiền', 'Cỡ số']];
-    sheetBCBH.getRange(5, 1, 1, 11).setValues(mainHeader);
+    const mainHeader = [['Mã kho', 'Mã hàng', 'Tên hàng', 'Quy cách', 'Đơn vị tính', 'Ghi Chú', 'Tổng SL', 'Đơn Giá', 'Thành Tiền', 'Thuế VAT', 'Tổng Tiền', 'Cỡ số']];
+    sheetBCBH.getRange(4, 1, 1, 12).setValues(mainHeader);
     if (maxSizes > 1) {
-      sheetBCBH.getRange(5, 11, 1, maxSizes).merge();
+      sheetBCBH.getRange(4, 12, 1, maxSizes).merge();
     }
-    sheetBCBH.getRange(5, 1, 1, maxCols).setFontWeight('bold').setBackground('#4a86e8').setFontColor('white').setHorizontalAlignment('center');
+    sheetBCBH.getRange(4, 1, 1, maxCols).setFontWeight('bold').setBackground('#4a86e8').setFontColor('white').setHorizontalAlignment('center');
+
+    // ⭐ THAY ĐỔI: Thêm dòng tổng hợp ngay dưới tiêu đề
+    const tongCongTienToanKy = tongSoTienToanKy + tongThueToanKy;
+    const summaryData = [['', '', 'Tổng phát sinh trong kỳ:', '', '', '', tongSoLuongToanKy, '', tongSoTienToanKy, tongThueToanKy, tongCongTienToanKy]];
+    const summaryRange = sheetBCBH.getRange(5, 1, 1, 11);
+    summaryRange.setValues(summaryData);
+    summaryRange.setFontWeight('bold');
+    sheetBCBH.getRange("C5").setHorizontalAlignment('right');
+    sheetBCBH.getRange(5, 7, 1, 5).setNumberFormat("#,##0;(#,##0);");
+
 
     let currentRow = 6;
 
@@ -2528,42 +2537,34 @@ function taoBaoCaoBanHang(startDateStr, endDateStr, selectedDonHang) {
             let tongTien = thanhTienTrongKy + thueTrongKy;
             let donGia = (tongSlTrongKy > 0) ? (thanhTienTrongKy / tongSlTrongKy) : 0;
 
-            // ⭐ THAY ĐỔI: Cấu trúc khối dữ liệu mới (4 dòng)
             const blockData = [
-                // Dòng 1: Thông tin và tên các size
-                [...donHang.info, '', '', '', '', '', ...donHang.sizes],
-                // Dòng 2: SL Kế hoạch
-                ['', '', 'SL Kế hoạch', '', '', donHang.soKeHoach, '', '', '', '', ...donHang.slKeHoach],
-                // Dòng 3: SL Trước kỳ
-                ['', '', 'SL đã báo cáo kỳ trước', '', '', tongSlTruocKy, '', '', '', '', ...donHang.slTruocKy],
-                // Dòng 4: SL Trong kỳ
-                ['', '', 'SL phát sinh kỳ này', '', '', tongSlTrongKy, donGia, thanhTienTrongKy, thueTrongKy, tongTien, ...donHang.slTrongKy]
+                [...donHang.info, donHang.ghiChu, '', '', '', '', '', ...donHang.sizes.map(s => `#${s}`)],
+                ['', '', 'SL Kế hoạch', '', '', '', donHang.soKeHoach, '', '', '', '', ...donHang.slKeHoach],
+                ['', '', 'SL đã báo cáo kỳ trước', '', '', '', tongSlTruocKy, '', '', '', '', ...donHang.slTruocKy],
+                ['', '', 'SL phát sinh kỳ này', '', '', '', tongSlTrongKy, donGia, thanhTienTrongKy, thueTrongKy, tongTien, ...donHang.slTrongKy]
             ];
             
-            const blockTotalCols = numInfoCols + 5 + numSizes;
+            const blockTotalCols = numInfoCols + 6 + numSizes;
             sheetBCBH.getRange(currentRow, 1, 4, blockTotalCols).setValues(blockData);
 
-            // Định dạng khối
             const blockRange = sheetBCBH.getRange(currentRow, 1, 4, blockTotalCols);
             blockRange.setBorder(true, true, true, true, true, true);
-            sheetBCBH.getRange(currentRow, 1, 1, numInfoCols).setFontWeight('bold');
-            sheetBCBH.getRange(currentRow, numInfoCols + 6, 1, numSizes).setHorizontalAlignment('center');
-            sheetBCBH.getRange(currentRow + 1, 3, 3, 1).setFontWeight('bold').setHorizontalAlignment('right'); // ⭐ THAY ĐỔI: In đậm và căn phải các nhãn SL
+            sheetBCBH.getRange(currentRow, 1, 1, numInfoCols + 1).setFontWeight('bold');
+            sheetBCBH.getRange(currentRow, numInfoCols + 7, 1, numSizes).setFontWeight('bold').setHorizontalAlignment('center');
+            sheetBCBH.getRange(currentRow + 1, 3, 3, 1).setFontWeight('bold').setHorizontalAlignment('right');
             
-            // Định dạng số
             const slFormat = "#,##0;(#,##0);";
             const tienFormat = "#,##0;(#,##0);";
-            const numTotalCols = 5;
             
-            sheetBCBH.getRange(currentRow + 1, numInfoCols + 1, 1, 1).setNumberFormat(slFormat);
-            sheetBCBH.getRange(currentRow + 1, numInfoCols + numTotalCols + 1, 1, numSizes).setNumberFormat(slFormat);
+            sheetBCBH.getRange(currentRow + 1, 7, 1, 1).setNumberFormat(slFormat);
+            sheetBCBH.getRange(currentRow + 1, 12, 1, numSizes).setNumberFormat(slFormat);
             
-            sheetBCBH.getRange(currentRow + 2, numInfoCols + 1, 1, 1).setNumberFormat(slFormat);
-            sheetBCBH.getRange(currentRow + 2, numInfoCols + numTotalCols + 1, 1, numSizes).setNumberFormat(slFormat);
+            sheetBCBH.getRange(currentRow + 2, 7, 1, 1).setNumberFormat(slFormat);
+            sheetBCBH.getRange(currentRow + 2, 12, 1, numSizes).setNumberFormat(slFormat);
 
-            sheetBCBH.getRange(currentRow + 3, numInfoCols + 1, 1, 1).setNumberFormat(slFormat);
-            sheetBCBH.getRange(currentRow + 3, numInfoCols + 2, 1, 4).setNumberFormat(tienFormat);
-            sheetBCBH.getRange(currentRow + 3, numInfoCols + numTotalCols + 1, 1, numSizes).setNumberFormat(slFormat);
+            sheetBCBH.getRange(currentRow + 3, 7, 1, 1).setNumberFormat(slFormat);
+            sheetBCBH.getRange(currentRow + 3, 8, 1, 4).setNumberFormat(tienFormat);
+            sheetBCBH.getRange(currentRow + 3, 12, 1, numSizes).setNumberFormat(slFormat);
             
             currentRow += 5;
         }
