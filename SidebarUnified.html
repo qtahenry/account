@@ -377,9 +377,11 @@
 <body>
 
 
+  <!-- ⭐ THAY ĐỔI: Thêm tab mới -->
   <div class="tab-container">
     <button class="tab active" onclick="switchTab('main')">📊 Báo Cáo Kế Toán</button>
     <button class="tab" onclick="switchTab('hanghoa')">📦 Báo Cáo Kho</button>
+    <button class="tab" onclick="switchTab('donhang')">📈 Báo Cáo Đơn Hàng</button>
   </div>
 
   <div id="main" class="tab-content active">
@@ -522,6 +524,50 @@
 
     <div class="status" id="hanghoaStatus" style="display:none;">Đã chọn: 0 hàng hóa</div>
   </div>
+  
+    <!-- ⭐ THAY ĐỔI: Thêm nội dung cho tab mới -->
+  <div id="donhang" class="tab-content">
+    <div class="section">
+      <div class="search-box">
+        <input type="text" id="donHangSearchInput" class="search-input" placeholder="🔍 Tìm theo mã hoặc tên đơn hàng..." oninput="filterDonHang();">
+        <span class="clear-search" id="clearDonHangSearch" onclick="clearDonHangSearch()" title="Xóa tìm kiếm">✕</span>
+      </div>     
+    </div>
+
+    <div class="section">
+      <div class="section-title">📑 Danh Sách Đơn Hàng</div>
+      <div class="select-all-controls">
+        <button class="btn-small" onclick="selectAllDonHang()">✅ Chọn Tất Cả</button>
+        <button class="btn-small" onclick="deselectAllDonHang()">❌ Bỏ Chọn Tất Cả</button>
+      </div>
+      <div class="hanghoa-list" id="donHangList">
+        <div id="loadingDonHang" style="padding: 20px; text-align: center; color: #5f6368;">Đang tải danh sách đơn hàng...</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">📅 Kỳ Báo Cáo</div>
+      <div class="date-inputs">
+        <div>
+          <label for="donHangStartDate">Từ ngày</label>
+          <input type="date" id="donHangStartDate">
+        </div>
+        <div>
+          <label for="donHangEndDate">Đến ngày</label>
+          <input type="date" id="donHangEndDate">
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">📊 Tạo Báo Cáo</div>
+       <div class="actions">
+        <button class="btn btn-primary" onclick="createBaoCaoBanHang()">📈 Tạo Báo Cáo Bán Hàng</button>
+      </div>
+    </div>
+
+    <div class="status" id="donHangStatus" style="display:none;">Đã chọn: 0 đơn hàng</div>
+  </div>
 
   <script>
     let allAccounts = [];
@@ -531,6 +577,11 @@
     
     let allHangHoa = [];
     let selectedHangHoaIds = new Set();
+    
+    // ⭐ THAY ĐỔI: Thêm biến cho đơn hàng
+    let allDonHang = [];
+    let selectedDonHangIds = [];
+    let isDonHangLoaded = false;
     
     let selectedWriteAccounts = [];
 
@@ -588,6 +639,9 @@
       document.getElementById('endDate').valueAsDate = lastDay;
       document.getElementById('hanghoaStartDate').valueAsDate = firstDay;
       document.getElementById('hanghoaEndDate').valueAsDate = lastDay;
+      // ⭐ THAY ĐỔI: Thêm ngày cho tab đơn hàng
+      document.getElementById('donHangStartDate').valueAsDate = firstDay;
+      document.getElementById('donHangEndDate').valueAsDate = lastDay;
     }
 
     function switchTab(tabName) {
@@ -599,6 +653,10 @@
 
       if (tabName === 'hanghoa' && !isHangHoaLoaded) {
         loadHangHoa();
+      }
+      // ⭐ THAY ĐỔI: Tải "lười" cho tab đơn hàng
+      if (tabName === 'donhang' && !isDonHangLoaded) {
+        loadDonHang();
       }
       
       if (tabName === 'main') updateStatus();
@@ -864,6 +922,97 @@
       renderHangHoaList(allHangHoa); // Re-render to uncheck all boxes
       updateHangHoaStatus();
     }
+    // ⭐ THAY ĐỔI: Thêm các hàm mới cho Đơn Hàng
+    function loadDonHang() {
+      const loadingElement = document.getElementById('loadingDonHang');
+      if (loadingElement) loadingElement.style.display = 'block';
+      google.script.run.withSuccessHandler(donHang => {
+        if (Array.isArray(donHang)) {
+          allDonHang = donHang;
+          renderDonHangList(allDonHang);
+          isDonHangLoaded = true;
+        } else {
+          document.getElementById('donHangList').innerHTML = '<div style="padding: 20px; text-align: center; color: #5f6368;">Không có dữ liệu đơn hàng.</div>';
+        }
+      }).withFailureHandler(err => {
+        document.getElementById('donHangList').innerHTML = `<div style="padding: 20px; text-align: center; color: #dc3545;">Lỗi tải dữ liệu: ${err}</div>`;
+      }).getDonHangForSidebar();
+    }
+
+    function renderDonHangList(donHangToRender) {
+      const listElement = document.getElementById('donHangList');
+      const loadingElement = document.getElementById('loadingDonHang');
+      if (loadingElement) loadingElement.style.display = 'none';
+      if (!donHangToRender || donHangToRender.length === 0) {
+        listElement.innerHTML = '<div style="padding: 20px; text-align: center; color: #5f6368;">Không tìm thấy đơn hàng.</div>';
+        return;
+      }
+      let html = '';
+      donHangToRender.forEach(item => {
+        const isChecked = selectedDonHangIds.includes(item.id);
+        html += `
+          <label class="hanghoa-item" for="donhang-${item.id}">
+            <input type="checkbox" id="donhang-${item.id}" value="${item.id}" onchange="updateDonHangSelection()" ${isChecked ? 'checked' : ''}>
+            <div class="hanghoa-info">
+              <div class="hanghoa-name">${item.ten}</div>
+              <div class="hanghoa-code">${item.id.replace('|', ' - ')}</div>
+            </div>
+          </label>`;
+      });
+      listElement.innerHTML = html;
+    }
+
+    function updateDonHangSelection() {
+      selectedDonHangIds = Array.from(document.querySelectorAll('#donHangList input:checked')).map(cb => cb.value);
+      updateDonHangStatus();
+    }
+
+    function updateDonHangStatus() {
+      const statusElement = document.getElementById('donHangStatus');
+      statusElement.style.display = selectedDonHangIds.length > 0 ? 'block' : 'none';
+      statusElement.textContent = `Đã chọn: ${selectedDonHangIds.length} đơn hàng`;
+    }
+
+    function filterDonHang() {
+      const term = document.getElementById('donHangSearchInput').value.toLowerCase();
+      document.getElementById('clearDonHangSearch').style.display = term ? 'block' : 'none';
+      const filtered = allDonHang.filter(item => 
+        (item.id && item.id.toLowerCase().includes(term)) ||
+        (item.ten && item.ten.toLowerCase().includes(term))
+      );
+      renderDonHangList(filtered);
+    }
+
+    function clearDonHangSearch() {
+      document.getElementById('donHangSearchInput').value = '';
+      filterDonHang();
+    }
+
+    function selectAllDonHang() {
+      document.querySelectorAll('#donHangList input[type="checkbox"]').forEach(cb => cb.checked = true);
+      updateDonHangSelection();
+    }
+
+    function deselectAllDonHang() {
+      document.querySelectorAll('#donHangList input[type="checkbox"]').forEach(cb => cb.checked = false);
+      updateDonHangSelection();
+    }
+
+    function createBaoCaoBanHang() {
+      const startDate = document.getElementById('donHangStartDate').value;
+      const endDate = document.getElementById('donHangEndDate').value;
+      if (!startDate || !endDate) return alert('Vui lòng chọn kỳ báo cáo');
+      
+      saveReportDates(startDate, endDate);
+      
+      showTempStatus('donHangStatus', `🔄 Đang tạo Báo cáo Bán hàng...`, 'loading');
+      
+      google.script.run.withSuccessHandler(() => {
+        showTempStatus('donHangStatus', `✅ Đã tạo Báo cáo Bán hàng`, 'success');
+      }).withFailureHandler(error => {
+        showTempStatus('donHangStatus', `❌ Lỗi: ${error}`, 'error');
+      }).taoBaoCaoBanHang(startDate, endDate, selectedDonHangIds);
+    }
 
     function createNhapXuatTon(reportType = 'ALL') {
       const startDate = document.getElementById('hanghoaStartDate').value;
@@ -926,4 +1075,3 @@
   </script>
 </body>
 </html>
-
